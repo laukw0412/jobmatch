@@ -1,1 +1,7 @@
 pydantic
+pymupdf
+python-docx
+openpyxl
+xlrd
+pillow
+pytesseract

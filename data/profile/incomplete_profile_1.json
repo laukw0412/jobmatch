@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "schema_version": "1.0",
+    "profile_version": 1
+  },
+
+  "identity": {
+    "full_name": "Test User"
+  },
+
+  "education": [
+    {
+      "institution": "Test University"
+    }
+  ],
+
+  "experience": [],
+  "research": [],
+  "projects": [],
+  "skills": [],
+  "languages": [],
+  "certifications": [],
+  "job_preferences": {},
+  "additional_information": {}
+}

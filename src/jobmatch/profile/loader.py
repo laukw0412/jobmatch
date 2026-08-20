@@ -1,6 +1,6 @@
 import json
-
 from jobmatch.profile.validator import validate_profile
+
 
 def load_profile(file_path):
     with open(file_path, "r", encoding="utf-8") as file:

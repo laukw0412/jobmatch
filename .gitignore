@@ -17,3 +17,6 @@ __pycache__/
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+# Personal documents
+data/documents/

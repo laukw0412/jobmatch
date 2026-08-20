@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "schema_version": "1.0",
+    "profile_version": 1
+  },
+  "identity": {
+    "full_name": "Test User"
+  },
+  "education": [
+    {
+      "institution": "Test University",
+      "degree": "Master"
+    }
+  ],
+  "experience": [],
+  "research": [],
+  "projects": [],
+  "skills": [
+    {
+      "name": "Python",
+      "category": "programming",
+      "level": "Basic"
+    }
+  ],
+  "languages": [
+    {
+      "language": "Japanese",
+      "level": "Business",
+      "certifications": [
+        {
+          "name": "JLPT",
+          "result": 1
+        }
+      ]
+    }
+  ],
+  "certifications": [],
+  "job_preferences": {},
+  "additional_information": {}
+}
