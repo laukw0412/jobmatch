@@ -434,3 +434,303 @@ Next development session:
 5. Begin automatic consolidation of information from resumes, transcripts, certificates, research documents, and other candidate materials
 
 Avoid spending unnecessary time optimizing OCR accuracy before testing the complete document-to-Profile pipeline.
+
+----------------------------------------------------------------
+
+## 2026-08-21
+
+### Document Ingestion v1 Completion
+
+Completed the initial OCR fallback for scanned/image-only PDF pages.
+
+PDF extraction now follows:
+
+`PDF -> Native Text Extraction -> OCR Fallback -> DocumentContent`
+
+For each PDF page:
+
+- Native text is extracted using PyMuPDF when available
+- If no native text is detected, the page is rendered as an image
+- The rendered page is processed using Tesseract OCR
+
+Created a reusable OCR helper inside:
+
+`src/jobmatch/document/extractor.py`
+
+Current OCR pipeline:
+
+`Image -> Pillow Image -> Tesseract OCR -> Text`
+
+The same OCR helper is now used by:
+
+- Image extraction
+- Scanned PDF fallback
+
+Document Ingestion v1 now supports:
+
+- PDF native text
+- PDF OCR fallback
+- DOCX
+- XLSX
+- XLS
+- JPG
+- JPEG
+- PNG
+
+All supported formats continue to produce the common:
+
+`DocumentContent`
+
+representation.
+
+
+### OpenAI API Integration
+
+Added the first OpenAI API integration for structured candidate information extraction.
+
+Installed and configured the OpenAI Python SDK.
+
+Successfully verified the API connection using the OpenAI Responses API.
+
+Current API flow:
+
+`Python -> OpenAI SDK -> Responses API -> OpenAI Model -> Response`
+
+API credentials are stored outside the source code using the:
+
+`OPENAI_API_KEY`
+
+environment variable.
+
+API keys are not stored in the repository.
+
+
+### OpenAI API Usage Tracking
+
+Created:
+
+`src/jobmatch/llm/openai_usage.py`
+
+Implemented reusable OpenAI API usage tracking.
+
+The tracker records:
+
+- Model name
+- Input tokens
+- Cached input tokens
+- Cache-write tokens when available
+- Output tokens
+- Reasoning tokens when available
+- Total tokens
+- Estimated input cost
+- Estimated output cost
+- Estimated total request cost
+- Daily cumulative request count
+- Daily cumulative token usage
+- Daily cumulative estimated cost
+
+Usage history is stored locally in:
+
+`data/usage/openai_usage.json`
+
+The public tracking function is:
+
+`track_openai_usage(response, model)`
+
+Pricing values are stored by model and include a pricing verification date so that future pricing changes can be reviewed.
+
+API cost calculations are estimates and are intended primarily for development monitoring.
+
+
+### Draft Profile Models
+
+Identified an important distinction between:
+
+- Partial information extracted from a single document
+- The final consolidated Personal Profile
+
+Created:
+
+`src/jobmatch/profile/draft_models.py`
+
+Draft models use optional fields to preserve incomplete document information without forcing the LLM to invent unsupported values.
+
+Examples include:
+
+- `DraftIdentity`
+- `DraftEducation`
+- `DraftExperience`
+- `DraftResearch`
+- `DraftProject`
+- `DraftSkill`
+- `DraftLanguage`
+- `DraftCertification`
+- `DraftJobPreferences`
+- `DraftProfile`
+
+The intended data flow is now:
+
+`DocumentContent -> DraftProfile -> Consolidation -> PersonalProfile`
+
+The final models in:
+
+`src/jobmatch/profile/models.py`
+
+remain stricter and are intended for standardized profile storage and validation.
+
+
+### Source-Aware Draft Profiles
+
+Added:
+
+`SourcedDraft`
+
+A SourcedDraft combines:
+
+- `source_file`
+- `file_type`
+- `DraftProfile`
+
+This will allow later consolidation logic to determine where extracted information came from.
+
+This is intended to support:
+
+- Deduplication
+- Conflict detection
+- Source comparison
+- Multi-document consolidation
+
+The SourcedDraft consolidation logic has not yet been implemented.
+
+
+### Structured Profile Extraction
+
+Created:
+
+`src/jobmatch/profile/extractor.py`
+
+Implemented the first LLM-based structured extraction pipeline using OpenAI Structured Outputs.
+
+Current pipeline:
+
+`DocumentContent -> OpenAI -> DraftProfile`
+
+The extractor:
+
+- Receives `DocumentContent`
+- Sends extracted document text to the OpenAI Responses API
+- Uses a developer prompt focused on source-grounded extraction
+- Requires structured output following the `DraftProfile` Pydantic schema
+- Records API usage and estimated cost
+- Returns the parsed `DraftProfile`
+
+The extraction prompt currently emphasizes:
+
+- Extract only information explicitly stated or directly supported by the document
+- Do not invent unsupported factual information
+- Leave unsupported fields as `None` or empty lists
+- Follow explicit document section headings
+- Avoid duplicating the same entry across multiple Profile sections
+- Preserve document meaning while organizing information into the Profile schema
+- Keep extraction separate from later job-matching inference
+
+
+### Real Resume Extraction Test
+
+Successfully tested the complete extraction pipeline using a real English DOCX resume.
+
+End-to-end pipeline:
+
+`DOCX`
+`-> load_document()`
+`-> extract_docx()`
+`-> DocumentContent`
+`-> OpenAI Structured Output`
+`-> DraftProfile`
+
+The extracted DraftProfile successfully contained structured information for:
+
+- Identity
+- Education
+- Research
+- Projects
+- Skills
+- Languages
+- Certifications
+- Job preferences
+
+The test also confirmed that unsupported fields could remain `None` or empty rather than being automatically fabricated.
+
+
+### Model Comparison
+
+Tested Profile extraction using:
+
+- `gpt-5.4-nano`
+- `gpt-5.6-terra`
+
+Initial testing showed that the extraction quality depends significantly on both:
+
+- Model capability
+- Prompt/schema design
+
+After improving the extraction prompt and DraftProfile structure, `gpt-5.4-nano` produced sufficiently accurate structured extraction for the current Resume test while remaining substantially cheaper than `gpt-5.6-terra`.
+
+Current default extraction model:
+
+`gpt-5.4-nano`
+
+`gpt-5.6-terra` remains a potential higher-capability fallback for more difficult documents.
+
+Model choice is intentionally kept configurable and may change after broader testing.
+
+
+### Current Profile Pipeline
+
+The current candidate document pipeline is:
+
+`Source Document`
+`-> Document Loader`
+`-> Document Extractor`
+`-> DocumentContent`
+`-> LLM Structured Extraction`
+`-> DraftProfile`
+`-> SourcedDraft`
+`-> [Future Consolidation]`
+`-> PersonalProfile`
+`-> Profile Validation`
+
+
+### Design Decisions
+
+The LLM extraction layer should primarily preserve source-supported facts.
+
+Inference and interpretation should be separated from extraction.
+
+For example:
+
+`Document Extraction`
+`-> What does the source explicitly provide?`
+
+Later:
+
+`Profile + Job Description`
+`-> What do those facts imply for job matching?`
+
+This separation is intended to reduce unsupported LLM assumptions while still allowing richer reasoning during later JobMatch analysis.
+
+
+### Next Step
+
+Next development session:
+
+1. Integrate `SourcedDraft` into the extraction pipeline
+2. Test extraction using additional real candidate documents
+3. Begin multi-document Profile consolidation
+4. Design initial deduplication rules
+5. Design initial conflict-handling rules
+6. Convert consolidated Draft data into `PersonalProfile`
+7. Validate the generated `PersonalProfile`
+8. Begin testing Profile version persistence after the consolidation pipeline is stable
+
+Do not begin RAG or JD matching until the basic multi-document candidate Profile consolidation pipeline is functional.

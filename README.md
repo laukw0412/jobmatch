@@ -8,6 +8,7 @@ JobMatch aims to combine:
 
 - Personal profile management
 - Multi-format candidate document processing
+- LLM-based structured information extraction
 - Job description analysis
 - Candidate-job matching
 - Application recommendations
@@ -16,20 +17,38 @@ JobMatch aims to combine:
 
 The project is also being developed as a practical software engineering and AI application portfolio project.
 
+
 ## Planned Workflow
 
 ### Personal Profile
 
-Multiple candidate documents will be consolidated into a structured Personal Profile:
+Multiple candidate documents will be processed and consolidated into a structured Personal Profile:
 
-`CV / Resume / Transcript / Certificates / Research / Projects -> DocumentContent -> PersonalProfile`
+`CV / Resume / Transcript / Certificates / Research / Projects`
 
-The Profile is planned to support:
+`-> DocumentContent`
+
+`-> DraftProfile`
+
+`-> SourcedDraft`
+
+`-> Consolidation`
+
+`-> PersonalProfile`
+
+`DraftProfile` represents potentially incomplete information extracted from individual documents.
+
+`SourcedDraft` keeps the extracted information connected to its original source document for later deduplication and conflict resolution.
+
+`PersonalProfile` represents the final standardized candidate profile after information from multiple documents has been consolidated.
+
+The Profile system is planned to support:
 
 - Machine-readable JSON representation
 - Human-readable representation
 - Natural-language Profile editing
 - Version history and rollback
+
 
 ### Document Input
 
@@ -45,9 +64,53 @@ The current document ingestion layer supports:
 
 Native document text is extracted when available.
 
-Image files are processed using Tesseract OCR with support for English, Japanese, Simplified Chinese, and Traditional Chinese.
+Scanned/image-only PDF pages automatically fall back to OCR when native text is unavailable.
 
-All supported document formats are converted into a common `DocumentContent` representation before further processing.
+Image and scanned-PDF OCR uses Tesseract with support for:
+
+- English
+- Japanese
+- Simplified Chinese
+- Traditional Chinese
+
+All supported document formats are converted into a common:
+
+`DocumentContent`
+
+representation before further processing.
+
+
+### LLM Profile Extraction
+
+JobMatch currently supports structured candidate information extraction using the OpenAI API.
+
+Current pipeline:
+
+`DocumentContent -> OpenAI Structured Output -> DraftProfile`
+
+The extraction layer is designed to:
+
+- Preserve source-supported information
+- Avoid inventing missing factual information
+- Preserve explicit document section structure when possible
+- Allow incomplete fields during single-document extraction
+- Keep extraction separate from later job-matching inference
+
+The current default extraction model is:
+
+`gpt-5.4-nano`
+
+Higher-capability models can be used when needed.
+
+OpenAI API usage is tracked locally, including:
+
+- Input tokens
+- Output tokens
+- Cached/cache-write tokens when available
+- Reasoning tokens when available
+- Estimated request cost
+- Daily cumulative usage and estimated cost
+
 
 ### Job Analysis
 
@@ -65,10 +128,15 @@ The analysis is planned to include:
 - Application recommendations
 - Recruitment and selection process information
 
+
 ### Future Features
 
 Planned later-stage features include:
 
+- Multi-document Profile consolidation
+- Profile deduplication and conflict resolution
+- Local LLM support
+- RAG-based information retrieval
 - Desktop GUI
 - Job analysis history
 - Automatic job discovery
@@ -76,9 +144,10 @@ Planned later-stage features include:
 - Growth and skill-gap advisor
 - Exportable reports
 
+
 ## Current Status
 
-**Personal Profile v1 + Document Ingestion v1 — In Development**
+**Document Ingestion v1 + LLM Profile Extraction v1 — Functional**
 
 Completed so far:
 
@@ -94,20 +163,30 @@ Completed so far:
 - Common `DocumentContent` model
 - Multi-format document loader
 - PDF native text extraction
+- PDF OCR fallback for scanned/image-only pages
 - DOCX text extraction
 - XLSX spreadsheet extraction
 - XLS spreadsheet extraction
 - JPG / JPEG / PNG OCR
 - Local Tesseract OCR configuration
 - English, Japanese, Simplified Chinese, and Traditional Chinese OCR support
-- Initial testing with real candidate documents
+- OpenAI API integration
+- OpenAI Structured Output integration
+- OpenAI token and estimated cost tracking
+- Draft Profile models for partial document extraction
+- Source-aware Draft Profile design
+- Successful real DOCX Resume -> DraftProfile extraction
+- Initial comparison of `gpt-5.4-nano` and `gpt-5.6-terra`
 
 Currently working on:
 
-- OCR fallback for scanned PDFs
-- Completing Document Ingestion v1
-- Converting extracted document content into structured Personal Profile data
-- Consolidating information from multiple candidate documents
+- Integrating `SourcedDraft`
+- Testing additional candidate documents
+- Consolidating multiple Draft Profiles
+- Deduplicating repeated information
+- Resolving conflicting information between source documents
+- Generating the final standardized `PersonalProfile`
+
 
 ## Project Structure
 
@@ -121,11 +200,14 @@ jobmatch/
 │       │   └── extractor.py
 │       ├── profile/
 │       │   ├── models.py
+│       │   ├── draft_models.py
+│       │   ├── extractor.py
 │       │   ├── loader.py
 │       │   └── validator.py
+│       ├── llm/
+│       │   └── openai_usage.py
 │       ├── enrichment/
 │       ├── jobs/
-│       ├── llm/
 │       ├── matching/
 │       ├── recommendations/
 │       ├── ui/
@@ -134,7 +216,8 @@ jobmatch/
 │   ├── applications/
 │   ├── documents/
 │   ├── jobs/
-│   └── profile/
+│   ├── profile/
+│   └── usage/
 ├── docs/
 │   └── development-log.md
 ├── prompts/

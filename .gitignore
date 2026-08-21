@@ -7,9 +7,12 @@ __pycache__/
 
 # Environment variables / secrets
 .env
+.env.*
 
-# Local virtual environment
+# Local virtual environments
 .venv/
+venv/
+env/
 
 # VS Code local settings
 .vscode/
@@ -18,6 +21,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Personal documents
+# Personal information
 data/documents/
 !data/documents/.gitkeep
+
+# Local API usage records
+data/usage/
+!data/usage/.gitkeep

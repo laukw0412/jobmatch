@@ -1,3 +1,9 @@
+# Object structure:
+# DOCX:  document -> document.paragraphs -> paragraph -> paragraph.text
+# PDF:   document -> page                -> page      -> page.get_text()
+# XLSX:  document -> sheet     -> row    -> cell      -> cell.value
+# Image: image    -> pillow image        -> OCR       -> pytesseract.image_to_string
+
 from pathlib import Path
 from docx import Document
 from openpyxl import load_workbook
@@ -8,11 +14,14 @@ import pytesseract # Tesseract OCR
 from jobmatch.document.models import DocumentContent
 
 
-# Object structure:
-# DOCX:  document -> document.paragraphs -> paragraph -> paragraph.text
-# PDF:   document -> page                -> page      -> page.get_text()
-# XLSX:  document -> sheet     -> row    -> cell      -> cell.value
-# Image: image    -> pillow image        -> OCR       -> pytesseract.image_to_string
+def ocr_image(image):
+    text = pytesseract.image_to_string(
+        image,
+        lang="eng+jpn+chi_sim+chi_tra"
+    )
+
+    return text.strip() # Remove leading/trailing whitespace
+
 
 def extract_docx(file_path):
     path = Path(file_path)
@@ -43,7 +52,24 @@ def extract_pdf(file_path):
     document = pymupdf.open(path)
 
     for page in document:
-        text.append(page.get_text())
+        page_text = page.get_text().strip()
+
+        # case 1: If the page has text, use it directly
+        if page_text:
+            text.append(page_text)
+
+        # case 2: If the page has no text, use OCR to extract text from the image
+        else:
+            page_image = page.get_pixmap() # Get the pixelmap of the page
+
+            image = Image.frombytes(
+                "RGB",
+                [page_image.width, page_image.height],
+                page_image.samples
+            )
+
+            page_text = ocr_image(image)
+            text.append(page_text)
 
     document.close()
 
@@ -110,12 +136,7 @@ def extract_image(file_path):
     path = Path(file_path)
 
     image = Image.open(path)
-
-    text = pytesseract.image_to_string(
-        image,
-        lang="eng+jpn+chi_sim+chi_tra"
-    )
-    
+    text = ocr_image(image)
     image.close()
 
     return DocumentContent(

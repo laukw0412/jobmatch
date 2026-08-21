@@ -1,9 +1,40 @@
+"""
+Final profile models.
+
+field: Type
+=> required field
+=> guarantees that core information must exist before a record is accepted
+   into the final profile.
+
+field: Type | None = None
+=> optional field
+=> allows genuinely unknown or non-essential information to remain empty
+   instead of forcing a value.
+
+field: list[Type]
+=> required section
+=> guarantees that the section itself exists in PersonalProfile,
+   even if its value is an empty list.
+
+Field(default_factory=list)
+=> automatically uses [] when no items exist
+=> allows valid empty categories without sharing the same list object.
+
+Field(default_factory=dict)
+=> automatically uses {} when no additional information exists.
+
+PersonalProfile
+=> all main sections must exist
+=> records inside those sections must satisfy the stricter final models
+=> provides a standardized profile for validation, storage, and job matching.
+"""
+
 from pydantic import BaseModel, Field
 
 
 class Metadata(BaseModel):
-    schema_version: str
-    profile_version: int
+    schema_version: str = "1.0"
+    profile_version: int = 1
 
 
 class Location(BaseModel):
@@ -93,15 +124,9 @@ class Skill(BaseModel):
     evidence: list[str] = Field(default_factory=list)
 
 
-class LanguageCertification(BaseModel):
-    name: str
-    result: str
-
-
 class Language(BaseModel):
     language: str
     level: str | None = None
-    certifications: list[LanguageCertification] = Field(default_factory=list)
     description: str | None = None
 
 
@@ -130,6 +155,8 @@ class JobPreferences(BaseModel):
     notes: str | None = None
 
 
+# Final standardized profile after information from multiple documents
+# has been merged. Main profile sections must always exist.
 class PersonalProfile(BaseModel):
     metadata: Metadata
     identity: Identity
