@@ -2,6 +2,8 @@
 
 JobMatch is an AI-assisted job matching and career analysis application designed to compare structured candidate profiles with job descriptions and provide actionable application recommendations.
 
+The project is also being developed as a practical software engineering and AI application portfolio project.
+
 ## Goals
 
 JobMatch aims to combine:
@@ -15,44 +17,31 @@ JobMatch aims to combine:
 - Job and company information enrichment
 - Career growth and skill-gap analysis
 
-The project is also being developed as a practical software engineering and AI application portfolio project.
+## Current Architecture Direction
 
+Candidate documents are first converted into a common `DocumentContent` representation.
 
-## Planned Workflow
+Current document ingestion:
 
-### Personal Profile
+`PDF / DOCX / XLSX / XLS / Images -> DocumentContent`
 
-Multiple candidate documents will be processed and consolidated into a structured Personal Profile:
+PDF and DOCX extraction now use Docling as the primary layout-aware parser, with existing format-specific extraction methods retained as fallbacks where appropriate.
 
-`CV / Resume / Transcript / Certificates / Research / Projects`
+An evidence-based multi-document pipeline was implemented and tested:
 
-`-> DocumentContent`
+`DocumentContent -> EvidenceSet -> MergedEvidenceSet -> ProfileContent`
 
-`-> DraftProfile`
+This pipeline is currently considered **experimental**. Testing showed that repeated LLM transformations can introduce information loss, duplicate records, category drift, multilingual inconsistencies, additional latency, and unnecessary complexity.
 
-`-> SourcedDraft`
+The next architecture to evaluate is therefore a simpler direct pipeline:
 
-`-> Consolidation`
+`Multiple DocumentContent -> OpenAI Structured Output -> ProfileContent`
 
-`-> PersonalProfile`
+If the direct approach preserves candidate information reliably, the Evidence extraction / merge stages will be removed from the MVP path. Source provenance can be added later when required by GUI or explanation features.
 
-`DraftProfile` represents potentially incomplete information extracted from individual documents.
+## Document Input
 
-`SourcedDraft` keeps the extracted information connected to its original source document for later deduplication and conflict resolution.
-
-`PersonalProfile` represents the final standardized candidate profile after information from multiple documents has been consolidated.
-
-The Profile system is planned to support:
-
-- Machine-readable JSON representation
-- Human-readable representation
-- Natural-language Profile editing
-- Version history and rollback
-
-
-### Document Input
-
-The current document ingestion layer supports:
+The document ingestion layer supports:
 
 - PDF
 - DOCX
@@ -62,47 +51,71 @@ The current document ingestion layer supports:
 - JPEG
 - PNG
 
-Native document text is extracted when available.
+### PDF / DOCX
 
-Scanned/image-only PDF pages automatically fall back to OCR when native text is unavailable.
+Docling is the primary layout-aware extraction method:
 
-Image and scanned-PDF OCR uses Tesseract with support for:
+`PDF / DOCX -> Docling -> Markdown -> DocumentContent`
+
+Fallbacks remain available:
+
+- PDF: PyMuPDF + Tesseract OCR fallback
+- DOCX: `python-docx`
+
+### Spreadsheet Input
+
+- XLSX: `openpyxl`
+- XLS: `xlrd`
+
+### Image OCR
+
+Image OCR uses Tesseract with support for:
 
 - English
 - Japanese
 - Simplified Chinese
 - Traditional Chinese
 
-All supported document formats are converted into a common:
+All supported document formats produce the common `DocumentContent` model before Profile processing.
 
-`DocumentContent`
+## Profile Models
 
-representation before further processing.
+The current final Profile schema is represented by `ProfileContent` and includes:
 
+- metadata
+- identity
+- education
+- experience
+- research
+- projects
+- skills
+- languages
+- certifications
+- job preferences
+- additional information
 
-### LLM Profile Extraction
+Current experimental evidence models include:
 
-JobMatch currently supports structured candidate information extraction using the OpenAI API.
+- `Evidence`
+- `EvidenceSet`
+- `MergedEvidence`
+- `MergedEvidenceSet`
 
-Current pipeline:
+These models are being evaluated and are not yet considered permanent parts of the MVP architecture.
 
-`DocumentContent -> OpenAI Structured Output -> DraftProfile`
+## LLM Integration
 
-The extraction layer is designed to:
+JobMatch uses the OpenAI Responses API with Structured Outputs for structured Profile generation.
 
-- Preserve source-supported information
-- Avoid inventing missing factual information
-- Preserve explicit document section structure when possible
-- Allow incomplete fields during single-document extraction
-- Keep extraction separate from later job-matching inference
+The active model name is centralized in:
 
-The current default extraction model is:
+`src/jobmatch/llm/config.py`
 
-`gpt-5.4-nano`
+API usage tracking is implemented in:
 
-Higher-capability models can be used when needed.
+`src/jobmatch/llm/openai_usage.py`
 
-OpenAI API usage is tracked locally, including:
+Tracking includes:
 
 - Input tokens
 - Output tokens
@@ -111,14 +124,44 @@ OpenAI API usage is tracked locally, including:
 - Estimated request cost
 - Daily cumulative usage and estimated cost
 
+Local API usage records are excluded from Git.
 
-### Job Analysis
+## Current Status
 
-Job descriptions will eventually support multiple input methods:
+**Document Ingestion v2 + Multi-Document Profile Architecture Evaluation**
+
+Completed so far:
+
+- Development environment and Git/GitHub setup
+- `src` package structure and editable installation
+- Final Profile Pydantic schema
+- Profile validation foundation
+- Common `DocumentContent` model
+- PDF, DOCX, XLSX, XLS, JPG, JPEG, and PNG input support
+- Tesseract multilingual OCR
+- PDF OCR fallback
+- Docling integration for layout-aware PDF / DOCX parsing
+- OpenAI Responses API integration
+- OpenAI Structured Outputs
+- Centralized LLM model configuration
+- OpenAI token and estimated-cost tracking
+- Experimental source-grounded Evidence extraction
+- Experimental multilingual Evidence merging
+- Experimental `MergedEvidenceSet -> ProfileContent` builder
+- Cache-controlled pipeline testing using `--no-cache`
+- Real English + Japanese resume multi-document testing
+
+Current architectural finding:
+
+The Evidence-based pipeline works technically but has not demonstrated enough reliability or efficiency to justify its complexity for the MVP. A direct multi-document-to-Profile approach will be tested next before continuing with RAG and job matching.
+
+## Job Analysis
+
+Job descriptions are planned to support:
 
 `Text / PDF / URL -> JobDocument -> Matcher`
 
-The analysis is planned to include:
+Planned analysis includes:
 
 - Match scores
 - Strengths
@@ -128,65 +171,21 @@ The analysis is planned to include:
 - Application recommendations
 - Recruitment and selection process information
 
-
-### Future Features
+## Future Features
 
 Planned later-stage features include:
 
-- Multi-document Profile consolidation
-- Profile deduplication and conflict resolution
-- Local LLM support
 - RAG-based information retrieval
 - Desktop GUI
+- Natural-language Profile editing
+- Profile version history and rollback
 - Job analysis history
 - Automatic job discovery
 - Job ranking
+- Job/company information enrichment
 - Growth and skill-gap advisor
 - Exportable reports
-
-
-## Current Status
-
-**Document Ingestion v1 + LLM Profile Extraction v1 — Functional**
-
-Completed so far:
-
-- Development environment setup
-- Git and GitHub integration
-- Modular `src` project structure
-- Python package configuration using `pyproject.toml`
-- Editable package installation
-- Personal Profile v1 Pydantic models
-- Profile JSON loading
-- Pydantic Profile validation
-- Valid and invalid Profile validation testing
-- Common `DocumentContent` model
-- Multi-format document loader
-- PDF native text extraction
-- PDF OCR fallback for scanned/image-only pages
-- DOCX text extraction
-- XLSX spreadsheet extraction
-- XLS spreadsheet extraction
-- JPG / JPEG / PNG OCR
-- Local Tesseract OCR configuration
-- English, Japanese, Simplified Chinese, and Traditional Chinese OCR support
-- OpenAI API integration
-- OpenAI Structured Output integration
-- OpenAI token and estimated cost tracking
-- Draft Profile models for partial document extraction
-- Source-aware Draft Profile design
-- Successful real DOCX Resume -> DraftProfile extraction
-- Initial comparison of `gpt-5.4-nano` and `gpt-5.6-terra`
-
-Currently working on:
-
-- Integrating `SourcedDraft`
-- Testing additional candidate documents
-- Consolidating multiple Draft Profiles
-- Deduplicating repeated information
-- Resolving conflicting information between source documents
-- Generating the final standardized `PersonalProfile`
-
+- Optional source provenance / evidence explanation
 
 ## Project Structure
 
@@ -199,12 +198,15 @@ jobmatch/
 │       │   ├── loader.py
 │       │   └── extractor.py
 │       ├── profile/
-│       │   ├── models.py
-│       │   ├── draft_models.py
-│       │   ├── extractor.py
-│       │   ├── loader.py
-│       │   └── validator.py
+│       │   ├── schema.py
+│       │   ├── evidence.py
+│       │   ├── evidence_extraction.py
+│       │   ├── evidence_merge.py
+│       │   ├── profile_builder.py
+│       │   ├── storage.py
+│       │   └── validation.py
 │       ├── llm/
+│       │   ├── config.py
 │       │   └── openai_usage.py
 │       ├── enrichment/
 │       ├── jobs/
@@ -217,6 +219,7 @@ jobmatch/
 │   ├── documents/
 │   ├── jobs/
 │   ├── profile/
+│   ├── test_outputs/
 │   └── usage/
 ├── docs/
 │   └── development-log.md
@@ -225,3 +228,22 @@ jobmatch/
 ├── pyproject.toml
 ├── README.md
 └── .gitignore
+```
+
+## Next Step
+
+The next development session will compare the current Evidence pipeline against a simpler direct approach:
+
+`Multiple DocumentContent -> ProfileContent`
+
+The comparison should focus on:
+
+- information preservation
+- multilingual consolidation
+- duplicate handling
+- output stability
+- latency
+- API cost
+- implementation complexity
+
+If the direct approach performs adequately, the experimental Evidence extraction and merge layers will be retired from the MVP path. The project can then proceed to JD processing, matching, and RAG with a substantially simpler Profile pipeline.

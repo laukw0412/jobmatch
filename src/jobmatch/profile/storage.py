@@ -1,5 +1,5 @@
 import json
-from jobmatch.profile.validator import validate_profile
+from src.jobmatch.profile.validation import validate_profile
 
 
 def load_profile(file_path):

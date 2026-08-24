@@ -28,3 +28,7 @@ data/documents/
 # Local API usage records
 data/usage/
 !data/usage/.gitkeep
+
+# Generated / test Profile data
+data/test_outputs/
+!data/test_outputs/.gitkeep

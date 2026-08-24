@@ -1,12 +1,12 @@
 from pydantic import ValidationError
-from jobmatch.profile.models import PersonalProfile
+from src.jobmatch.profile.schema import ProfileContent
 
 
 def validate_profile(profile):
     try:
         # Validate the input profile structure and field types;
         # raises ValidationError if against the profile schema
-        PersonalProfile.model_validate(profile)
+        ProfileContent.model_validate(profile)
 
     except ValidationError as error:
         raise ValueError(

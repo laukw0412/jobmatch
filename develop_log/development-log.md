@@ -734,3 +734,252 @@ Next development session:
 8. Begin testing Profile version persistence after the consolidation pipeline is stable
 
 Do not begin RAG or JD matching until the basic multi-document candidate Profile consolidation pipeline is functional.
+
+----------------------------------------------------------------
+
+## 2026-08-24
+
+### Document Parsing Upgrade with Docling
+
+Upgraded the document extraction layer to use Docling as the primary layout-aware parser for PDF and DOCX documents.
+
+Current PDF / DOCX strategy:
+
+`PDF / DOCX -> Docling DocumentConverter -> DoclingDocument -> Markdown -> DocumentContent`
+
+Docling is now preferred because it preserves document structure such as headings, lists, tables, and layout relationships better than plain-text extraction.
+
+Fallback extraction remains available:
+
+- PDF: PyMuPDF for embedded text, with Tesseract OCR for pages without native text
+- DOCX: `python-docx` paragraph extraction
+
+The `DocumentConverter` instance was moved to module scope so that it can be reused instead of being recreated for every document conversion.
+
+Testing with an image-based Japanese student-card PDF confirmed that Docling can invoke RapidOCR and recover substantially better structured Japanese text than the previous fallback path.
+
+### Evidence-Based Multi-Document Experiment
+
+The previous `DraftProfile -> SourcedDraft -> PersonalProfile` design was reconsidered because the relationship between multiple similarly shaped intermediate models was becoming difficult to understand and maintain.
+
+A new experimental evidence pipeline was implemented:
+
+`DocumentContent -> EvidenceSet -> MergedEvidenceSet -> ProfileContent`
+
+The purpose was to separate:
+
+- source-document parsing
+- source-grounded fact extraction
+- cross-document deduplication / merging
+- final Profile construction
+
+Evidence extraction stored supporting source text and source metadata so extracted information could be checked against the original `DocumentContent`.
+
+Source verification was tested using exact and normalized text matching. This exposed limitations caused by OCR / Markdown formatting differences and demonstrated that increasingly complex source-span verification did not provide enough practical benefit for the current MVP.
+
+### Multi-Document Evidence Merge Testing
+
+Tested the evidence pipeline using English and Japanese versions of the same resume.
+
+A typical test produced approximately:
+
+`48 extracted evidence records -> 24 merged evidence records -> ProfileContent`
+
+The merge stage successfully combined many equivalent multilingual facts, but several important failure cases remained:
+
+- semantically identical English and Japanese records were sometimes retained separately
+- specific information could be weakened during merging
+- language proficiency such as `Native` could be reduced to `Fluent` or lost
+- one academic research activity could be represented as both `research` and `project`
+- category labels generated at an earlier stage could incorrectly influence later Profile construction
+
+The final Profile builder also showed output variation between repeated runs using the same cached merged evidence.
+
+These tests demonstrated that adding more prompt rules to each intermediate stage was not reliably solving the underlying problem.
+
+### Profile Builder
+
+Implemented an experimental Profile builder using OpenAI Structured Outputs:
+
+`MergedEvidenceSet -> ProfileContent`
+
+The builder successfully generated the complete final Profile schema, including:
+
+- metadata
+- identity
+- education
+- experience
+- research
+- projects
+- skills
+- languages
+- certifications
+- job preferences
+- additional information
+
+`additional_information` was changed from an unrestricted `dict` to `list[str]` because OpenAI Structured Outputs rejected the unrestricted dictionary JSON Schema.
+
+Testing confirmed that the Profile schema itself can be generated successfully, but also showed that a multi-stage LLM pipeline can introduce information loss and classification drift between stages.
+
+### Cache-Controlled Testing
+
+Added cache-based testing for the multi-document Profile pipeline.
+
+The test runner supports:
+
+`python tests/test_build_profile.py`
+
+which uses cached merged evidence when available, and:
+
+`python tests/test_build_profile.py --no-cache`
+
+which forces document extraction, evidence extraction, and evidence merging to run again before rebuilding the Profile.
+
+This reduced repeated API calls while debugging later pipeline stages.
+
+### Naming and Structure Cleanup
+
+Several Profile-related names were revised so that relationships between files, models, and functions are easier to understand.
+
+Important model naming changes during today's refactor included moving away from the earlier Draft/Sourced terminology toward:
+
+- `DocumentContent`
+- `Evidence`
+- `EvidenceSet`
+- `MergedEvidence`
+- `MergedEvidenceSet`
+- `ProfileContent`
+
+Important function naming changes included:
+
+- evidence extraction: `extract_evidence()`
+- evidence consolidation renamed to evidence merge: `merge_evidence()`
+- final Profile construction: `build_profile()`
+
+Important module naming changes included:
+
+- generic Profile extraction naming -> `evidence_extraction.py`
+- `consolidation.py` -> `evidence_merge.py`
+- final Profile construction -> `profile_builder.py`
+- final Profile schema consolidated under `schema.py`
+- validation module standardized as `validation.py`
+
+Earlier experimental modules such as `draft_models.py` and the previous Profile `extractor.py` became obsolete under the evidence-based experiment and were removed / replaced during the refactor.
+
+The earlier `models.py` / `validator.py` Profile naming was also revised toward the clearer `schema.py` / `validation.py` convention.
+
+### Centralized LLM Configuration
+
+Added centralized model configuration under:
+
+`src/jobmatch/llm/config.py`
+
+LLM-related modules now import the configured `MODEL` rather than independently defining the model name in every extraction / merge / builder module.
+
+This makes model changes easier to control during testing.
+
+### Architecture Review and Reflection
+
+A major design review was performed after the evidence pipeline consumed substantial development time without reliably solving the original multi-document consolidation problem.
+
+The main concern is that the current experimental architecture:
+
+`DocumentContent -> EvidenceSet -> MergedEvidenceSet -> ProfileContent`
+
+requires multiple LLM transformations over the same information.
+
+Each transformation creates another opportunity for:
+
+- information loss
+- category drift
+- duplicate records
+- multilingual inconsistency
+- prompt complexity
+- additional API latency and cost
+
+The evidence layer originally aimed to improve traceability and source verification, but current testing indicates that this benefit may not justify the added complexity for the MVP.
+
+A review of alternative approaches suggests that Docling already provides a useful document-level intermediate representation. Therefore, a substantially simpler architecture should be evaluated before further investing in custom Evidence merging.
+
+Proposed alternative:
+
+`Multiple Source Documents`
+`-> DocumentContent / Docling structured content`
+`-> one multi-document LLM structured extraction`
+`-> ProfileContent`
+
+In this design, duplicate resolution and multilingual consolidation happen in a single structured extraction step instead of being distributed across multiple LLM stages.
+
+Source provenance / evidence tracking can be added later if required by the GUI or explanation features rather than blocking the main MVP pipeline now.
+
+### Updated Experimental Project Structure
+
+```text
+jobmatch/
+├── src/
+│   └── jobmatch/
+│       ├── document/
+│       │   ├── models.py
+│       │   ├── loader.py
+│       │   └── extractor.py
+│       ├── profile/
+│       │   ├── schema.py
+│       │   ├── evidence.py
+│       │   ├── evidence_extraction.py
+│       │   ├── evidence_merge.py
+│       │   ├── profile_builder.py
+│       │   ├── storage.py
+│       │   └── validation.py
+│       ├── llm/
+│       │   ├── config.py
+│       │   └── openai_usage.py
+│       ├── enrichment/
+│       ├── jobs/
+│       ├── matching/
+│       ├── recommendations/
+│       ├── ui/
+│       └── main.py
+├── data/
+│   ├── applications/
+│   ├── documents/
+│   ├── jobs/
+│   ├── profile/
+│   ├── test_outputs/
+│   └── usage/
+├── docs/
+│   └── development-log.md
+├── prompts/
+├── tests/
+│   ├── test_docling.py
+│   ├── test_multi_evidence.py
+│   ├── test_merge.py
+│   └── test_build_profile.py
+├── pyproject.toml
+├── README.md
+└── .gitignore
+```
+
+The Evidence modules are currently considered experimental rather than a finalized architectural requirement.
+
+### Next Step
+
+Next development session should begin with an architecture decision rather than further prompt tuning.
+
+Priority evaluation:
+
+1. Prototype a direct multi-document extraction path:
+   `list[DocumentContent] -> ProfileContent`
+2. Test the same English and Japanese resumes against the direct approach.
+3. Compare accuracy, information preservation, latency, API cost, and code complexity with the Evidence pipeline.
+4. If the direct approach performs adequately, retire the Evidence extraction / merge pipeline from the MVP path.
+5. Keep provenance / source evidence as a later optional feature instead of a prerequisite for Profile construction.
+6. After the Profile pipeline is simplified and stable, proceed to JD processing, matching, and RAG without further over-optimizing intermediate extraction architecture.
+
+### Development Reflection
+
+Today's work produced useful implementation experience but also exposed an important engineering lesson: additional architectural layers are not automatically improvements simply because they make responsibilities appear theoretically cleaner.
+
+The Evidence design improved conceptual separation, but in practice it increased model count, naming complexity, API calls, latency, prompt tuning, and opportunities for information loss. A simpler pipeline may provide better reliability and allow the project to reach its actual JobMatch functionality sooner.
+
+Future development should prefer the smallest architecture that preserves enough correctness for the MVP, and add provenance, conflict-resolution machinery, or additional intermediate representations only after a concrete product requirement demonstrates that they are necessary.
+

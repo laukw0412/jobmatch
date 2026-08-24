@@ -1,5 +1,5 @@
 from pathlib import Path
-from jobmatch.document.extractor import (
+from jobmatch.document.extraction import (
     extract_pdf,
     extract_docx,
     extract_xlsx,

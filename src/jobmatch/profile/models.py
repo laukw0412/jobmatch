@@ -85,6 +85,7 @@ class Experience(BaseModel):
 class Research(BaseModel):
     title: str
     organization: str | None = None
+    role: str | None = None
     start_date: str | None = None
     end_date: str | None = None
     status: str | None = None
@@ -117,12 +118,11 @@ class Project(BaseModel):
 
 class Skill(BaseModel):
     name: str
-    category: str
+    category: str | None = None
     level: str | None = None
     years: float | None = None
     description: str | None = None
     evidence: list[str] = Field(default_factory=list)
-
 
 class Language(BaseModel):
     language: str
@@ -157,7 +157,7 @@ class JobPreferences(BaseModel):
 
 # Final standardized profile after information from multiple documents
 # has been merged. Main profile sections must always exist.
-class PersonalProfile(BaseModel):
+class ProfileContent(BaseModel):
     metadata: Metadata
     identity: Identity
     education: list[Education]
@@ -168,4 +168,4 @@ class PersonalProfile(BaseModel):
     languages: list[Language]
     certifications: list[Certification]
     job_preferences: JobPreferences
-    additional_information: dict = Field(default_factory=dict)
+    additional_information: list[str] = Field(default_factory=list)
