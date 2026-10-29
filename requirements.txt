@@ -8,3 +8,5 @@ pytesseract
 openai
 python-dotenv
 docling
+langchain-text-splitters
+chromadb

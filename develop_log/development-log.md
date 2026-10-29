@@ -983,3 +983,164 @@ The Evidence design improved conceptual separation, but in practice it increased
 
 Future development should prefer the smallest architecture that preserves enough correctness for the MVP, and add provenance, conflict-resolution machinery, or additional intermediate representations only after a concrete product requirement demonstrates that they are necessary.
 
+----------------------------------------------------------------
+
+## 2026-10-29
+
+### Architecture Review: RAG-First MVP
+
+Resumed JobMatch development and reviewed the project's architecture and implementation priorities.
+
+Key decisions:
+
+- RAG is a mandatory component of the MVP, as gaining practical experience with RAG is one of the project's primary objectives.
+- A consolidated Personal Profile is no longer required before implementing RAG.
+- Original documents and their associated metadata will serve as the primary information sources.
+- Previous Profile extraction and Evidence/Merge experiments are retained for reference but are not part of the current MVP pipeline.
+- The project will use existing libraries for specialized functionality while keeping the overall RAG workflow under direct Python control.
+- Local LLM integration remains a future feature. A lightweight provider abstraction may be added later.
+
+### RAG Chunking Implementation
+
+Created and updated:
+
+- `src/jobmatch/rag/chunking.py`
+- `tests/test_chunking.py`
+- `tests/test_multiformat_chunking.py`
+
+Implemented:
+
+- `chunk_document()` — routes supported documents through parsing and chunking.
+- `chunk_plain_text()` — uses LangChain's `RecursiveCharacterTextSplitter` for plain-text chunking.
+- Docling `HybridChunker` for structure-aware chunking.
+- Standardized chunk dictionaries containing `chunk_id`, `source_file`, `chunk_index`, `text`, and `method`.
+- Fallback document loading when Docling conversion or chunking fails.
+
+Current document handling:
+
+| Format | Primary Method |
+|---|---|
+| PDF / DOCX | Docling + HybridChunker |
+| XLSX / PNG / JPG / JPEG | Docling + HybridChunker, with fallback |
+| XLS | Existing document loader + RecursiveCharacterTextSplitter |
+| TXT / MD | Direct text loading + RecursiveCharacterTextSplitter |
+
+The legacy XLS format is handled directly by the existing loader because Docling requires LibreOffice for XLS-to-XLSX conversion.
+
+### Multi-Format Document Testing
+
+Successfully tested three real documents:
+
+**English Resume (PDF)**
+
+- Generated 6 chunks.
+- Preserved the main resume sections, including education, research, projects, and skills.
+- Identified layout-related duplication and incorrect associations between some fields.
+- Confirmed that the previously suspected missing Honeywell project was present in the complete chunk output.
+
+**Japanese JLPT Result (PNG)**
+
+- Generated 5 chunks.
+- Successfully extracted important information, including JLPT N1 qualification and passing status.
+- Identified OCR noise involving Japanese furigana and inconsistent table relationships.
+- Observed that related certificate information was distributed across multiple chunks.
+
+**Japanese Resume (XLS)**
+
+- Generated 1 chunk containing 1,136 characters.
+- Confirmed successful extraction through the legacy Excel loader.
+- Added a direct XLS handling branch to avoid unnecessary Docling conversion failures.
+- Identified reading-order problems caused by complex spreadsheet formatting and merged cells.
+
+These issues are documented but will not block further MVP development unless they materially affect retrieval or matching accuracy.
+
+### OpenAI Embedding and Chroma Integration
+
+Created:
+
+- `tests/test_vector_search.py`
+
+Successfully tested the following pipeline:
+
+`PDF -> Docling -> Chunking -> OpenAI Embedding -> Chroma -> Vector Retrieval`
+
+Implementation details:
+
+- Used OpenAI `text-embedding-3-small`.
+- Generated 1,536-dimensional embedding vectors.
+- Stored 6 resume chunks in a local persistent Chroma collection.
+- Embedded an English search query and retrieved the three nearest chunks.
+- Verified that research-related sections were ranked among the most relevant results.
+
+Test query:
+
+`Experience with transformer-based AI models`
+
+The first two retrieval results were Self-Introduction and Research Experience, both containing relevant Transformer-based AI experience.
+
+Chroma stores embeddings, chunk text, and metadata locally under `data/chroma/`.
+
+**Current limitation:** The test script reprocesses and re-embeds the source document each time it runs. Incremental indexing and embedding reuse have not yet been implemented.
+
+### Dependency and Environment Management
+
+Added or introduced the following dependencies:
+
+- `chromadb`
+- `langchain-text-splitters`
+
+An initial Chroma installation was accidentally performed in the Anaconda `base` environment, producing dependency conflicts involving Streamlit and MLflow.
+
+Subsequent project development and testing used the dedicated `jobmatch` Conda environment.
+
+The local Chroma database directory must remain excluded from Git because it may contain private document text and embeddings.
+
+### Development Decisions and Reflection
+
+- Prefer established parsing and chunking libraries instead of maintaining custom implementations unnecessarily.
+- Use Docling for document-aware processing and LangChain's text splitter for plain-text fallback.
+- Keep Embedding and Chroma operations explicit rather than introducing the complete LangChain workflow framework.
+- Avoid excessive optimization of OCR and document layouts before evaluating their practical impact on RAG retrieval.
+- Preserve source-document references so future job-matching results can be traced back to supporting evidence.
+- Distinguish successful text extraction from accurate structural interpretation.
+
+The main development priority is to complete a working end-to-end RAG-based job-matching application before introducing advanced features.
+
+### Current Progress
+
+**Implemented and tested:**
+
+- Multi-format document chunking
+- English PDF processing
+- Japanese PNG OCR and chunking
+- Legacy XLS processing
+- OpenAI text embeddings
+- Local Chroma vector storage
+- Single-document semantic retrieval
+
+**Not yet implemented or validated:**
+
+- Multi-document indexing with change detection
+- Reuse of previously stored document embeddings during indexing
+- Cross-language retrieval testing
+- Job description matching and evaluation
+- RAG-based matching explanations
+- Standalone GUI
+- Local LLM integration
+
+### Next Step
+
+Implement `src/jobmatch/rag/indexing.py` for persistent multi-document indexing.
+
+The next development stage should:
+
+1. Discover supported documents under `data/documents/`.
+2. Generate chunks and embeddings for new or modified documents.
+3. Store embeddings and source metadata in Chroma.
+4. Skip unchanged documents to avoid unnecessary API calls.
+5. Support retrieval across multiple source documents.
+6. Test English, Japanese, and Chinese cross-language queries.
+
+The multi-document indexing implementation was discussed and drafted but **was not executed during this session**.
+
+---
