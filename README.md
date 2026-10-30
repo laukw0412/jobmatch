@@ -1,249 +1,150 @@
 # JobMatch
 
-JobMatch is an AI-assisted job matching and career analysis application designed to compare structured candidate profiles with job descriptions and provide actionable application recommendations.
+**JobMatch** is an AI-assisted job matching application that retrieves evidence from a candidate's documents and compares it with job descriptions to support informed application decisions.
 
-The project is also being developed as a practical software engineering and AI application portfolio project.
+The project is also a hands-on portfolio project focused on building a practical Retrieval-Augmented Generation (RAG) workflow, integrating LLM APIs, and learning software engineering through an end-to-end application.
 
-## Goals
+## Project Goals
 
-JobMatch aims to combine:
+- Import multiple candidate documents (resumes, transcripts, certificates, research materials, etc.).
+- Retrieve relevant evidence from those documents using semantic search.
+- Analyze job descriptions and evaluate requirements against retrieved evidence.
+- Present concise matching results, evidence, gaps, and actionable application recommendations.
+- Provide a standalone desktop GUI in a later phase.
+- Support additional JD input formats, such as PDF and URLs, later.
+- Keep an interface that can accommodate a local LLM provider in the future.
 
-- Personal profile management
-- Multi-format candidate document processing
-- LLM-based structured information extraction
-- Job description analysis
-- Candidate-job matching
-- Application recommendations
-- Job and company information enrichment
-- Career growth and skill-gap analysis
+## Architecture
 
-## Current Architecture Direction
+The **current MVP direction is RAG-first**. A consolidated candidate Profile is *not* required before retrieval.
 
-Candidate documents are first converted into a common `DocumentContent` representation.
+```text
+Candidate documents (PDF / DOCX / XLSX / XLS / images / TXT / MD)
+    -> Document parsing + Chunking
+    -> OpenAI Embeddings
+    -> Chroma (persistent vector collection)
 
-Current document ingestion:
+Job description / query
+    -> Query Embedding
+    -> Chroma Top-K Retrieval
+    -> Source-grounded chunks
+    -> [Planned] JD requirement extraction + LLM matching
+    -> [Planned] Match report and recommendations
+```
 
-`PDF / DOCX / XLSX / XLS / Images -> DocumentContent`
+### Document Processing and Chunking
 
-PDF and DOCX extraction now use Docling as the primary layout-aware parser, with existing format-specific extraction methods retained as fallbacks where appropriate.
+- `src/jobmatch/document/` contains the existing document-loading utilities.
+- `src/jobmatch/rag/chunking.py` provides `chunk_document()` and `chunk_plain_text()`.
+- TXT and Markdown are read as text and split with LangChain's `RecursiveCharacterTextSplitter`.
+- Legacy XLS is processed through the existing loader and the recursive text splitter.
+- PDF, DOCX, XLSX, and image files are routed through Docling and `HybridChunker`, with a fallback to the existing loader and recursive splitter if Docling processing fails or produces no chunks.
+- Chunk metadata includes a source filename, index, text, and chunking method.
 
-An evidence-based multi-document pipeline was implemented and tested:
+Supported file extensions in the current chunker: `.pdf`, `.docx`, `.xlsx`, `.xls`, `.png`, `.jpg`, `.jpeg`, `.txt`, `.md`. **Legacy `.doc` is not in the current chunker whitelist.** Format support does not guarantee perfect OCR or extraction for every document.
 
-`DocumentContent -> EvidenceSet -> MergedEvidenceSet -> ProfileContent`
+### Multi-Document Indexing
 
-This pipeline is currently considered **experimental**. Testing showed that repeated LLM transformations can introduce information loss, duplicate records, category drift, multilingual inconsistencies, additional latency, and unnecessary complexity.
+`src/jobmatch/rag/indexing.py` implements:
 
-The next architecture to evaluate is therefore a simpler direct pipeline:
+- `calculate_file_hash()` — SHA-256 content fingerprinting.
+- `index_document()` — chunk, embed, and store one document.
+- `index_directory()` — recursively index supported files from a directory.
+- OpenAI `text-embedding-3-small` embeddings.
+- A persistent Chroma collection for multiple files.
+- Detection of unchanged files to skip unnecessary parsing and API calls.
+- Replacement of the indexed chunks for a modified file.
+- Source-path and content-hash metadata for indexed records.
 
-`Multiple DocumentContent -> OpenAI Structured Output -> ProfileContent`
+Known MVP limitations: deleted source files are not automatically removed from the collection; indexing is not transactional; embedding requests are not yet batched for very large documents; and a change to the embedding model or chunking configuration does not automatically invalidate an unchanged file's stored index.
 
-If the direct approach preserves candidate information reliably, the Evidence extraction / merge stages will be removed from the MVP path. Source provenance can be added later when required by GUI or explanation features.
+### Retrieval
 
-## Document Input
+Cross-document semantic retrieval has been tested using a query embedding and Chroma's vector search. Retrieved results include the source file, text, and vector distance. **Distance is not a matching percentage.**
 
-The document ingestion layer supports:
+A reusable `retrieve_chunks(query, top_k=5)` function has been drafted in `src/jobmatch/rag/retrieval.py`, but its standalone test result has not yet been confirmed. The immediate next task is to verify this reusable interface, then connect it to JD analysis.
 
-- PDF
-- DOCX
-- XLSX
-- XLS
-- JPG
-- JPEG
-- PNG
+## Previous Profile Experiments
 
-### PDF / DOCX
+The project previously explored a structured `ProfileContent` schema and an experimental pipeline:
 
-Docling is the primary layout-aware extraction method:
+```text
+DocumentContent -> EvidenceSet -> MergedEvidenceSet -> ProfileContent
+```
 
-`PDF / DOCX -> Docling -> Markdown -> DocumentContent`
+This approach was found to add repeated LLM transformations, latency, and risks of information loss, duplication, category drift, and multilingual inconsistencies. A simpler direct document-to-Profile extraction was also prototyped.
 
-Fallbacks remain available:
-
-- PDF: PyMuPDF + Tesseract OCR fallback
-- DOCX: `python-docx`
-
-### Spreadsheet Input
-
-- XLSX: `openpyxl`
-- XLS: `xlrd`
-
-### Image OCR
-
-Image OCR uses Tesseract with support for:
-
-- English
-- Japanese
-- Simplified Chinese
-- Traditional Chinese
-
-All supported document formats produce the common `DocumentContent` model before Profile processing.
-
-## Profile Models
-
-The current final Profile schema is represented by `ProfileContent` and includes:
-
-- metadata
-- identity
-- education
-- experience
-- research
-- projects
-- skills
-- languages
-- certifications
-- job preferences
-- additional information
-
-Current experimental evidence models include:
-
-- `Evidence`
-- `EvidenceSet`
-- `MergedEvidence`
-- `MergedEvidenceSet`
-
-These models are being evaluated and are not yet considered permanent parts of the MVP architecture.
+**Neither Profile consolidation nor the Evidence/Merge pipeline is a prerequisite for the current RAG MVP.** Existing Profile-related code is historical/experimental and may be revisited later for editable candidate information, version history, or GUI features.
 
 ## LLM Integration
 
-JobMatch uses the OpenAI Responses API with Structured Outputs for structured Profile generation.
+- OpenAI API integration and structured-output experiments are already part of the project.
+- Model configuration and API usage tracking are implemented under `src/jobmatch/llm/`.
+- Usage tracking includes tokens and estimated cost where supported.
+- The current indexing flow uses OpenAI Embeddings and reads credentials from the local environment / `.env` file.
+- Local LLM integration is deferred until the main MVP works, with a provider abstraction planned for later.
 
-The active model name is centralized in:
+## Development Status (October 30, 2026)
 
-`src/jobmatch/llm/config.py`
+| Component | Status |
+| --- | --- |
+| Development environment and GitHub | Implemented |
+| Multi-format document loading | Implemented; coverage varies by format |
+| Recursive and Docling hybrid chunking | Implemented |
+| OpenAI embeddings | Tested |
+| Chroma multi-document indexing | Tested with two TXT files |
+| SHA-256 unchanged-file skipping | Tested |
+| Modified-file reindexing | Tested |
+| Cross-document semantic retrieval | Tested with two TXT files |
+| Reusable retrieval interface | Drafted; standalone test unconfirmed |
+| JD requirement extraction | Planned next |
+| Requirement-wise RAG + matching analysis | Planned |
+| Matching report and recommendations | Planned |
+| Standalone desktop GUI | Planned |
+| Local LLM provider | Deferred |
 
-API usage tracking is implemented in:
+### Recent Test Results
 
-`src/jobmatch/llm/openai_usage.py`
+A two-file indexing test showed unchanged files being skipped and only the modified file being updated, with two stored chunks remaining. A retrieval query for computer vision and image generation ranked `research.txt` (distance `0.7455`) ahead of `skills.txt` (distance `1.4661`) and returned the updated research text.
 
-Tracking includes:
+These are small functional checks, **not** a comprehensive benchmark of retrieval accuracy or multi-format document quality.
 
-- Input tokens
-- Output tokens
-- Cached/cache-write tokens when available
-- Reasoning tokens when available
-- Estimated request cost
-- Daily cumulative usage and estimated cost
-
-Local API usage records are excluded from Git.
-
-## Current Status
-
-**Document Ingestion v2 + Multi-Document Profile Architecture Evaluation**
-
-Completed so far:
-
-- Development environment and Git/GitHub setup
-- `src` package structure and editable installation
-- Final Profile Pydantic schema
-- Profile validation foundation
-- Common `DocumentContent` model
-- PDF, DOCX, XLSX, XLS, JPG, JPEG, and PNG input support
-- Tesseract multilingual OCR
-- PDF OCR fallback
-- Docling integration for layout-aware PDF / DOCX parsing
-- OpenAI Responses API integration
-- OpenAI Structured Outputs
-- Centralized LLM model configuration
-- OpenAI token and estimated-cost tracking
-- Experimental source-grounded Evidence extraction
-- Experimental multilingual Evidence merging
-- Experimental `MergedEvidenceSet -> ProfileContent` builder
-- Cache-controlled pipeline testing using `--no-cache`
-- Real English + Japanese resume multi-document testing
-
-Current architectural finding:
-
-The Evidence-based pipeline works technically but has not demonstrated enough reliability or efficiency to justify its complexity for the MVP. A direct multi-document-to-Profile approach will be tested next before continuing with RAG and job matching.
-
-## Job Analysis
-
-Job descriptions are planned to support:
-
-`Text / PDF / URL -> JobDocument -> Matcher`
-
-Planned analysis includes:
-
-- Match scores
-- Strengths
-- Skill and experience gaps
-- Missing requirements
-- Application risks
-- Application recommendations
-- Recruitment and selection process information
-
-## Future Features
-
-Planned later-stage features include:
-
-- RAG-based information retrieval
-- Desktop GUI
-- Natural-language Profile editing
-- Profile version history and rollback
-- Job analysis history
-- Automatic job discovery
-- Job ranking
-- Job/company information enrichment
-- Growth and skill-gap advisor
-- Exportable reports
-- Optional source provenance / evidence explanation
-
-## Project Structure
+## Project Structure (Relevant Components)
 
 ```text
 jobmatch/
-├── src/
-│   └── jobmatch/
-│       ├── document/
-│       │   ├── models.py
-│       │   ├── loader.py
-│       │   └── extractor.py
-│       ├── profile/
-│       │   ├── schema.py
-│       │   ├── evidence.py
-│       │   ├── evidence_extraction.py
-│       │   ├── evidence_merge.py
-│       │   ├── profile_builder.py
-│       │   ├── storage.py
-│       │   └── validation.py
-│       ├── llm/
-│       │   ├── config.py
-│       │   └── openai_usage.py
-│       ├── enrichment/
-│       ├── jobs/
-│       ├── matching/
-│       ├── recommendations/
-│       ├── ui/
-│       └── main.py
-├── data/
-│   ├── applications/
-│   ├── documents/
-│   ├── jobs/
-│   ├── profile/
-│   ├── test_outputs/
-│   └── usage/
+├── src/jobmatch/
+│   ├── document/       # Document loading and extraction
+│   ├── rag/
+│   │   ├── chunking.py
+│   │   ├── indexing.py
+│   │   └── retrieval.py  # Drafted; test unconfirmed
+│   ├── profile/        # Previous Profile experiments
+│   ├── llm/            # LLM configuration and usage tracking
+│   ├── matching/       # Planned JD matching logic
+│   └── main.py
+├── data/                # Local documents and vector data (do not commit private content)
 ├── docs/
 │   └── development-log.md
-├── prompts/
 ├── tests/
+│   ├── test_multi_index.py
+│   └── test_multi_retrieval.py
 ├── pyproject.toml
 ├── README.md
 └── .gitignore
 ```
 
-## Next Step
+The diagram summarizes relevant modules discussed during development; it is not intended as a verified inventory of every file in the local working tree.
 
-The next development session will compare the current Evidence pipeline against a simpler direct approach:
+## Next Steps
 
-`Multiple DocumentContent -> ProfileContent`
+1. Run and verify `retrieve_chunks()` as a reusable module.
+2. Implement a minimal JD requirement extractor.
+3. Retrieve supporting candidate evidence separately for each requirement.
+4. Use an LLM to produce evidence-based matching assessments that distinguish unmet requirements from insufficient evidence.
+5. Add a compact matching report, then a standalone GUI.
+6. Add larger-document batching, index lifecycle controls, improved source traceability, and local LLM support as follow-up improvements.
 
-The comparison should focus on:
+## Privacy
 
-- information preservation
-- multilingual consolidation
-- duplicate handling
-- output stability
-- latency
-- API cost
-- implementation complexity
-
-If the direct approach performs adequately, the experimental Evidence extraction and merge layers will be retired from the MVP path. The project can then proceed to JD processing, matching, and RAG with a substantially simpler Profile pipeline.
+Candidate documents, vector databases, `.env` credentials, and local API-usage records should remain local and excluded from version control. Review `git status` before committing; do not publish private documents or API keys.

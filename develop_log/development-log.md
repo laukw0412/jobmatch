@@ -1143,4 +1143,315 @@ The next development stage should:
 
 The multi-document indexing implementation was discussed and drafted but **was not executed during this session**.
 
----
+----------------------------------------------------------------
+
+## 2026-10-30
+
+### Development Focus
+
+Continued JobMatch development with a focus on multi-document RAG indexing, incremental updates, and semantic retrieval.
+
+The primary objective was to extend the existing single-document RAG pipeline into a multi-document retrieval system while keeping the implementation simple and reusable.
+
+### 1. Chunking Module Review and Refinement
+
+Reviewed and refined `src/jobmatch/rag/chunking.py`.
+
+Changes and decisions:
+
+- Reorganized document processing branches using `if / elif / else` to improve readability.
+- Retained `RecursiveCharacterTextSplitter` for TXT, Markdown, and fallback text processing.
+- Retained Docling `HybridChunker` for structured documents and images.
+- Continued using the existing `load_document()` function for legacy XLS processing and fallback extraction.
+- Improved variable naming to avoid overwriting `path` with a filename string.
+- Clarified code comments and exception handling.
+- Preserved chunk metadata, including `chunk_id`, `source_file`, `chunk_index`, `text`, and `method`.
+
+Current chunking workflow:
+
+```text
+Document
+  ├── TXT / MD
+  │     └── RecursiveCharacterTextSplitter
+  ├── XLS
+  │     └── load_document()
+  │           └── RecursiveCharacterTextSplitter
+  └── PDF / DOCX / XLSX / Images
+        └── Docling DocumentConverter
+              └── HybridChunker
+                    └── Fallback to load_document() if needed
+```
+
+The current implementation is sufficient for the initial RAG MVP. Further optimization of document conversion and fallback behavior is deferred.
+
+### 2. Multi-Document Indexing
+
+Created:
+
+- `src/jobmatch/rag/indexing.py`
+
+Implemented functions:
+
+- `calculate_file_hash()`
+- `index_document()`
+- `index_directory()`
+
+Key features:
+
+- Recursively discover supported documents in a directory.
+- Reuse the existing document chunking module.
+- Generate embeddings with OpenAI `text-embedding-3-small`.
+- Store document chunks and embeddings in a persistent Chroma collection.
+- Calculate SHA-256 hashes to detect file content changes.
+- Skip unchanged files to avoid unnecessary API calls.
+- Re-index modified documents.
+- Remove outdated chunks before inserting updated content.
+- Generate stable document-specific chunk IDs using normalized file paths.
+- Preserve source file paths, file hashes, chunk indices, and chunking methods as metadata.
+- Continue processing other files when an individual file fails.
+
+Current indexing workflow:
+
+```text
+Multiple Documents
+       |
+       v
+File Discovery
+       |
+       v
+SHA-256 Change Detection
+       |
+       v
+Document Chunking
+       |
+       v
+OpenAI Embeddings
+       |
+       v
+Chroma Vector Database
+```
+
+### 3. OpenAI API Configuration
+
+Encountered an API initialization error during the first indexing test:
+
+```text
+openai.OpenAIError: Missing credentials.
+```
+
+Cause:
+
+- The OpenAI client was initialized before loading environment variables from `.env`.
+
+Resolution:
+
+- Added `load_dotenv()` before `OpenAI()` initialization in `index_directory()`.
+
+The indexing test subsequently completed successfully.
+
+### 4. Multi-Document Indexing Tests
+
+Created:
+
+- `tests/test_multi_index.py`
+
+Test documents:
+
+- `research.txt`
+- `skills.txt`
+
+Initial successful test:
+
+```text
+=== First run ===
+indexed: research.txt
+indexed: skills.txt
+Total stored chunks: 2
+
+{'indexed': 2, 'updated': 0, 'skipped': 0, 'empty': 0, 'failed': 0}
+
+=== Second run ===
+skipped: research.txt
+skipped: skills.txt
+Total stored chunks: 2
+
+{'indexed': 0, 'updated': 0, 'skipped': 2, 'empty': 0, 'failed': 0}
+```
+
+The test confirmed that multiple documents can be indexed into the same Chroma collection and that unchanged documents are skipped.
+
+### 5. Incremental Index Update Test
+
+Extended `tests/test_multi_index.py` to modify `research.txt` and run indexing again.
+
+Observed results:
+
+```text
+=== Third run: modified document ===
+updated: research.txt
+skipped: skills.txt
+Total stored chunks: 2
+
+{'indexed': 0, 'updated': 1, 'skipped': 1, 'empty': 0, 'failed': 0}
+```
+
+Verified:
+
+- Modified files are detected through SHA-256 hash comparison.
+- Unchanged files are skipped.
+- Updated chunks replace the previous indexed content.
+- The total number of stored chunks remains consistent for the test documents.
+
+The next retrieval test also confirmed that the updated text was available in Chroma.
+
+### 6. Cross-Document Semantic Retrieval
+
+Created:
+
+- `tests/test_multi_retrieval.py`
+
+Test query:
+
+```text
+Experience with computer vision and image generation
+```
+
+Observed results:
+
+```text
+=== Result 1 ===
+Source: research.txt
+Distance: 0.7455
+Text: Research in computer vision, generative AI, and omnidirectional image generation using PyTorch.
+
+=== Result 2 ===
+Source: skills.txt
+Distance: 1.4661
+Text: Programming skills include Python, machine learning, deep learning, and data analysis.
+```
+
+Verified:
+
+- A query embedding can be generated using OpenAI.
+- Chroma retrieves relevant chunks from multiple indexed documents.
+- Retrieval results preserve source metadata.
+- Updated document content is searchable.
+- Vector distance provides a relative similarity measure, not a matching percentage.
+
+The test used two indexed chunks. Larger-scale retrieval quality remains to be evaluated.
+
+### 7. Reusable Retrieval Interface
+
+Prepared:
+
+- `src/jobmatch/rag/retrieval.py`
+- `tests/test_retrieval_function.py`
+
+Designed the reusable function:
+
+```python
+retrieve_chunks(query: str, top_k: int = 5) -> list[dict]
+```
+
+The function:
+
+- Validates the input query and `top_k`.
+- Connects to the persistent Chroma collection.
+- Generates a query embedding.
+- Performs Top-K vector similarity search.
+- Returns chunk text, source information, chunk index, and distance.
+
+The implementation was provided, but successful execution of the standalone retrieval-function test has not yet been confirmed.
+
+### 8. RAG Architecture and Design Decisions
+
+Confirmed the following MVP architecture:
+
+```text
+Candidate Documents
+        |
+        v
+Document Parsing
+        |
+        v
+Chunking
+        |
+        v
+OpenAI Embeddings
+        |
+        v
+Chroma Vector Store
+        |
+        v
+Semantic Retrieval
+        |
+        v
+JD Matching (Next Phase)
+```
+
+Design decisions:
+
+- RAG remains a required component of the MVP.
+- Use direct document-based retrieval instead of requiring a consolidated Profile.
+- Keep the current implementation lightweight and avoid unnecessary intermediate layers.
+- Reuse existing document parsing and LLM components wherever possible.
+- Continue using OpenAI APIs initially.
+- Reserve local LLM integration for a later stage.
+- Keep code comments and docstrings in English.
+- Prioritize working end-to-end functionality over premature optimization.
+
+### 9. Current Limitations
+
+Known limitations:
+
+- Multi-document indexing tests currently cover a small TXT dataset.
+- PDF, DOCX, XLSX, and image indexing require additional end-to-end testing.
+- Documents deleted from the source directory are not automatically removed from Chroma.
+- Embeddings are generated in a single request per document without batching.
+- The current update procedure is not transactional.
+- Stable chunk IDs are based on normalized file paths, not global content identity.
+- Retrieval does not yet include requirement-specific query generation.
+- The standalone `retrieve_chunks()` interface still requires execution verification.
+- JD parsing and matching have not yet been implemented.
+
+These limitations do not prevent continuation toward the initial JD Matching MVP.
+
+### 10. Next Steps
+
+Next development session:
+
+1. Verify `retrieve_chunks()` through `tests/test_retrieval_function.py`.
+2. Implement JD requirement extraction using an OpenAI LLM.
+3. Extract individual technical, experience, education, and language requirements from job descriptions.
+4. Perform RAG retrieval separately for each relevant requirement.
+5. Connect retrieved evidence to an initial LLM-based matching analysis.
+6. Produce an initial matching table with strengths, gaps, evidence sources, and application recommendations.
+
+Planned workflow:
+
+```text
+Job Description
+      |
+      v
+Requirement Extraction
+      |
+      v
+Requirement-Based RAG Retrieval
+      |
+      v
+Evidence-Based LLM Matching
+      |
+      v
+Matching Report
+```
+
+### End-of-Day Summary
+
+Successfully implemented and tested multi-document RAG indexing, SHA-256-based incremental updates, and cross-document semantic retrieval.
+
+The project now has a working foundation for retrieving relevant candidate information from a shared vector database.
+
+The next priority is to connect the existing RAG system to JD requirement extraction and candidate-job matching rather than further expanding the RAG infrastructure.
+
+
+----------------------------------------------------------------

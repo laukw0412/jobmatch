@@ -32,11 +32,13 @@ def chunk_plain_text(
     if max_chars <= 0:
         raise ValueError("max_chars must be positive.")
 
+    # Use LangChain's splitter to set the rule for chunking
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=max_chars,
         chunk_overlap=min(100, max_chars // 5),
     )
 
+    # Use the splitter to split text into chunks
     texts = splitter.split_text(text)
 
     return [
@@ -51,15 +53,13 @@ def chunk_plain_text(
     ]
 
 
-def chunk_document(file_path: str | Path) -> list[dict]:
-    """
-    Extract and chunk a document for RAG indexing.
 
-    Prefer Docling HybridChunker for structured documents.
-    Use direct text loading or the existing document loader as fallback.
-    """
+def chunk_document(file_path: str | Path) -> list[dict]:
+    """Extract and chunk a document for RAG indexing."""
+
     path = Path(file_path)
 
+    # Validate the input file
     if not path.is_file():
         raise FileNotFoundError(path)
 
@@ -68,52 +68,54 @@ def chunk_document(file_path: str | Path) -> list[dict]:
     if extension not in SUPPORTED_EXTENSIONS:
         raise ValueError(f"Unsupported file type: {extension}")
 
-    # Plain text files do not require document conversion.
+    # Select the chunking method based on the file type
     if extension in {".txt", ".md"}:
         text = path.read_text(encoding="utf-8-sig")
         return chunk_plain_text(text, path.name)
 
-    # Use the legacy Excel loader for .xls files.
-    if extension == ".xls":
-
+    elif extension == ".xls":
         document = load_document(path)
-        return chunk_plain_text(
-            text=document.text,
-            source_file=document.source_file,
-        )
+        text = document.text
+        source_file = document.source_file
 
-    # Prefer Docling for structured documents and images.
-    try:
-        result = _converter.convert(str(path))
-        chunker = HybridChunker()
-        chunks = []
+        return chunk_plain_text(text, source_file)
 
-        for item in chunker.chunk(dl_doc=result.document):
-            text = chunker.contextualize(chunk=item).strip()
+    else:
+        # =====================================================
+        # Try Docling HybridChunker for other supported formats
+        try:
+            result = _converter.convert(str(path))
+            chunker = HybridChunker()
+            chunks = []
 
-            if not text:
-                continue
+            for item in chunker.chunk(dl_doc=result.document):
+                text = chunker.contextualize(chunk=item).strip()
 
-            chunks.append({
-                "chunk_id": f"{path.name}::{len(chunks)}",
-                "source_file": path.name,
-                "chunk_index": len(chunks),
-                "text": text,
-                "method": "hybrid",
-            })
+                # Skip empty chunks ("")
+                if not text:
+                    continue
 
-        if chunks:
-            return chunks
+                chunks.append({
+                    "chunk_id": f"{path.name}::{len(chunks)}",
+                    "source_file": path.name,
+                    "chunk_index": len(chunks),
+                    "text": text,
+                    "method": "hybrid",
+                })
+            # -------------------------------------------------
+            # Return chunks if the list is not empty
+            if chunks:
+                return chunks
+            else:
+                print(f"Docling produced no chunks: {path.name}")
+            # -------------------------------------------------
+        # =====================================================
+        except Exception as exc:
+            print(f"Docling processing failed: {path.name}: {exc}")
 
-        print(f"Docling produced no chunks: {path.name}")
+        # Fallback if Docling fails or produces no chunks
+        document = load_document(path)
+        text = document.text
+        source_file = document.source_file
 
-    except Exception as exc:
-        print(f"Docling processing failed: {path.name}: {exc}")
-
-    # Fall back to the existing document loader.
-    document = load_document(path)
-
-    return chunk_plain_text(
-        text=document.text,
-        source_file=document.source_file,
-    )
+        return chunk_plain_text(text,source_file)
