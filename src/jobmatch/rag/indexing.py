@@ -5,10 +5,7 @@ from pathlib import Path
 import chromadb
 from openai import OpenAI
 
-from jobmatch.rag.chunking import (
-    SUPPORTED_EXTENSIONS,
-    chunk_document,
-)
+from jobmatch.rag.chunking import SUPPORTED_EXTENSIONS, chunk_document
 
 
 EMBEDDING_MODEL = "text-embedding-3-small"

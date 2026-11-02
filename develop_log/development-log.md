@@ -1455,3 +1455,239 @@ The next priority is to connect the existing RAG system to JD requirement extrac
 
 
 ----------------------------------------------------------------
+
+
+## 2026-11-02
+
+### Development Summary
+
+Continued development of the JobMatch MVP, focusing on job description acquisition, structured requirement extraction, and requirement-based RAG retrieval.
+
+The main objective was to connect previously implemented document retrieval capabilities with real job descriptions while preserving the information needed for reliable candidate-job matching.
+
+### 1. Job Description URL Extraction
+
+Implemented and tested the URL extraction workflow in:
+
+- `src/jobmatch/jobs/web_extractor.py`
+- `tests/test_job_url_extraction.py`
+
+Implementation:
+
+- Added HTTPS URL validation.
+- Used Requests and Trafilatura for initial HTML extraction.
+- Added Playwright as a fallback for JavaScript-rendered pages.
+- Introduced basic job-related content validation using `JOB_MARKERS`.
+- Added detection of common blocked or invalid pages.
+- Provided a manual text input fallback when automatic extraction fails.
+
+Testing:
+
+- Successfully extracted a real Sony AI Application Engineer job description from a Workday URL.
+- Retrieved approximately 5,092 characters.
+- Confirmed that the extracted text included the main responsibilities, required qualifications, preferred qualifications, and development environment.
+- Saved the extracted text to `data/test_extracted_job.txt`.
+
+Limitations:
+
+- Automatic extraction does not guarantee that expandable job descriptions are complete.
+- Websites may return truncated descriptions, login pages, or unrelated recommended jobs.
+- Basic keyword validation cannot reliably determine JD completeness.
+- Website-specific extraction implementations were avoided to keep the MVP maintainable.
+
+### 2. JD Completeness and User Confirmation
+
+Discussed how incomplete job descriptions could cause inaccurate matching results.
+
+Decisions:
+
+- Preserve the extracted JD text for user inspection.
+- Require user confirmation before structured extraction in the current test workflow.
+- Allow manual editing of the JD text before analysis.
+- Plan a readable and editable JD preview page for the future GUI.
+- Do not treat successful text extraction as proof that the entire JD was retrieved.
+
+The current confirmation mechanism is implemented in:
+
+- `tests/test_job_extraction.py`
+
+The planned GUI will replace terminal confirmation with a JD preview and confirmation interface.
+
+### 3. Structured Job Description Extraction
+
+Implemented:
+
+- `src/jobmatch/jobs/models.py`
+- `src/jobmatch/jobs/extractor.py`
+- `tests/test_job_extraction.py`
+
+Added Pydantic models:
+
+- `JobRequirement`
+- `JobDescription`
+
+`JobRequirement` fields:
+
+- `description`
+- `category`
+- `priority`
+
+`JobDescription` fields:
+
+- `job_title`
+- `company_name`
+- `location`
+- `responsibilities`
+- `requirements`
+
+Implemented `extract_job_description()` using OpenAI Structured Outputs.
+
+The extraction prompt was designed to:
+
+- Identify the primary job posting.
+- Exclude navigation controls, advertisements, and unrelated job listings.
+- Separate responsibilities from candidate qualifications.
+- Preserve required and preferred qualification priorities.
+- Preserve logical alternatives such as "PyTorch or TensorFlow".
+- Avoid inventing qualifications.
+- Avoid treating development environment information as mandatory requirements.
+
+Testing:
+
+- Processed the extracted Sony AI Application Engineer JD.
+- Successfully extracted 5 responsibilities.
+- Successfully extracted all 8 required qualifications.
+- Successfully extracted all 8 preferred qualifications.
+- Preserved the main qualification meanings and priorities.
+- Saved the structured result to `data/test_structured_job.json`.
+
+The current schema does not separately capture application process requirements, such as essay submissions or coding tests. This may be considered in a later iteration.
+
+### 4. Requirement-based RAG Retrieval
+
+Implemented:
+
+- `src/jobmatch/matching/__init__.py`
+- `src/jobmatch/matching/retriever.py`
+- `tests/test_requirement_retrieval.py`
+
+Added functions:
+
+- `select_evidence()`
+- `retrieve_job_requirements()`
+
+`retrieve_job_requirements()`:
+
+- Iterates through structured JD requirements.
+- Uses each requirement description as a semantic search query.
+- Calls the existing `retrieve_chunks()` function.
+- Associates retrieved candidate evidence with its corresponding requirement.
+- Preserves requirement category, priority, source information, and retrieval distance.
+
+`select_evidence()`:
+
+- Sorts candidate chunks by semantic distance.
+- Prioritizes evidence from different source documents.
+- Fills remaining result slots with additional relevant chunks.
+- Returns up to the configured `top_k` results.
+
+Default retrieval settings:
+
+- `top_k = 5`
+- `candidate_multiplier = 3`
+- Up to 15 initial candidate chunks per requirement.
+- Up to 5 selected evidence chunks per requirement.
+
+Simplified the selection logic by removing the earlier `seen` and `unique` deduplication structures.
+
+Reason:
+
+- Chroma normally returns distinct records within a single query.
+- The previous deduplication key included document source, chunk index, and text.
+- It would not effectively remove repeated content across different resume versions.
+- Source diversity was retained as a more immediately useful retrieval strategy.
+
+### 5. Requirement Retrieval Testing
+
+Ran requirement-based retrieval using the structured Sony JD.
+
+Results:
+
+- Successfully processed all 16 job requirements.
+- Returned source metadata and semantic distances.
+- Saved results to `data/test_requirement_evidence.json`.
+- Confirmed that requirement-specific queries were successfully passed to Chroma.
+
+Observed limitations:
+
+- The active Chroma collection returned only two short test documents: `skills.txt` and `research.txt`.
+- Technical requirements retrieved semantically relevant content.
+- Education, language, and publication requirements lacked appropriate supporting evidence.
+- Chroma returned the closest available documents even when they did not demonstrate the requested qualification.
+
+Key conclusion:
+
+Successful vector retrieval does not mean that valid matching evidence has been found. Retrieved chunks must be evaluated before being used to determine candidate suitability.
+
+### 6. Architecture Decisions
+
+Confirmed the following architecture:
+
+JD URL / Text
+    -> JD Text
+    -> User Review and Confirmation
+    -> LLM Structured Extraction
+    -> Requirement-based RAG Retrieval
+    -> Evidence Assessment and Matching Analysis
+    -> Matching Table and Application Recommendations
+
+Additional decisions:
+
+- Retain the complete original JD for final matching analysis.
+- Use structured requirements as individual retrieval queries.
+- Preserve Required and Preferred distinctions.
+- Keep requirement-to-evidence associations.
+- Do not use vector distance as a direct matching score.
+- Do not automatically assume that the latest document is the most authoritative.
+- Distinguish missing evidence from confirmed failure to meet a requirement.
+- Avoid introducing unnecessary intermediate LLM agents or profile-merging pipelines.
+
+### 7. Current Limitations
+
+- Requirement retrieval has not yet been validated against a representative collection of real candidate documents.
+- Similar or outdated resumes may introduce repeated or conflicting evidence.
+- Source diversity does not guarantee evidence relevance or correctness.
+- The final Matching Analysis module has not yet been implemented.
+- The standalone GUI and JD preview interface remain pending.
+- Automatic JD completeness detection remains limited.
+
+### Next Steps
+
+1. Index real candidate documents, including resumes, academic records, language certificates, and research materials.
+2. Ensure that personal documents and generated local data are excluded from Git.
+3. Keep temporary test documents separate from real candidate evidence where practical.
+4. Re-run requirement-based retrieval using the Sony JD.
+5. Evaluate retrieval quality, cross-language retrieval, missing evidence, and conflicting document versions.
+6. Implement LLM-based Matching Analysis using the original JD, structured requirements, and retrieved candidate evidence.
+7. Develop a standalone GUI with readable, editable JD preview and confirmation.
+8. Add application recommendations and skill-gap analysis.
+
+### Development Status
+
+Completed initial implementations:
+
+- Multi-format document extraction
+- Document chunking
+- Chroma indexing
+- Multi-document indexing with change detection
+- Basic semantic retrieval
+- Job description URL extraction
+- Structured JD extraction
+- Requirement-based RAG retrieval
+
+Next priority:
+
+Validate RAG evidence quality using real candidate documents before implementing final matching evaluation.
+
+
+----------------------------------------------------------------

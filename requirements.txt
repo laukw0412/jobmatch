@@ -1,12 +1,24 @@
+# Data models
 pydantic
+
+# Document extraction
 pymupdf
 python-docx
 openpyxl
 xlrd
 pillow
 pytesseract
+docling
+
+# LLM and embeddings
 openai
 python-dotenv
-docling
+
+# RAG
 langchain-text-splitters
 chromadb
+
+# Job URL extraction
+requests
+trafilatura
+playwright

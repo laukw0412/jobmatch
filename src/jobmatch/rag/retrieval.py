@@ -2,11 +2,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import chromadb
 
-from jobmatch.rag.indexing import (
-    CHROMA_PATH,
-    COLLECTION_NAME,
-    EMBEDDING_MODEL,
-)
+from jobmatch.rag.indexing import CHROMA_PATH, COLLECTION_NAME, EMBEDDING_MODEL
 
 
 def retrieve_chunks(query: str, top_k: int = 5) -> list[dict]:

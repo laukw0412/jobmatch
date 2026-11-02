@@ -35,3 +35,10 @@ data/test_outputs/
 
 # Local RAG vector database
 data/chroma/
+
+# Local test outputs
+data/test_*.txt
+data/test_*.json
+
+# Web extraction benchmarks
+data/benchmarks/
