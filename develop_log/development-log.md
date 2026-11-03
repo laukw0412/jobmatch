@@ -1691,3 +1691,241 @@ Validate RAG evidence quality using real candidate documents before implementing
 
 
 ----------------------------------------------------------------
+
+
+## 2026-11-03
+
+### Development Focus
+
+Re-evaluated the existing JobMatch retrieval and evidence selection architecture after observing repeated, weakly relevant, and potentially misleading evidence in previous matching experiments.
+
+The main objective was to identify the root causes before proceeding with further LLM matching development.
+
+No major changes were made to the production RAG or matching architecture today. Development focused on diagnostic experiments and architectural evaluation.
+
+### 1. Evidence Retrieval Architecture Review
+
+Reviewed the existing pipeline:
+
+`Documents → Parsing → Chunking → ChromaDB → Vector Retrieval → CrossEncoder Reranking → Evidence Selection → LLM Matching`
+
+Identified several architectural concerns:
+
+- Retrieved chunks were treated as evidence before their actual evidential value had been established.
+- The retrieval pipeline selected a fixed number of chunks even when no directly supporting evidence existed.
+- Multiple resumes in different languages could contain repeated descriptions of the same underlying experience.
+- Chunk-level semantic deduplication did not reliably identify fact-level duplication.
+- CrossEncoder reranking improved relevance ordering but did not independently solve evidence duplication or qualification verification.
+- Retrieval and reranking could not recover information missing from the indexed content.
+
+Decided not to proceed immediately with the proposed `validated_analyzer.py` implementation, as stricter LLM matching alone would not resolve upstream data quality and retrieval problems.
+
+### 2. Document Inventory Experiment
+
+Created and executed:
+
+`tests/test_document_scope.py`
+
+The script was corrected to use the existing ChromaDB collection named `jobmatch_documents` rather than relying on an unavailable indexing helper or assuming that only one collection existed.
+
+Inventory results:
+
+- Local documents: 11
+- Indexed chunks: 89
+- Resume and resume-related documents: 31 chunks
+- Certificates and academic records: 43 chunks
+- Career history: 12 chunks
+- Test sample: 3 chunks
+
+Key findings:
+
+- Four multilingual or alternative-format resumes accounted for 30 chunks.
+- One Japanese resume spreadsheet contributed another chunk.
+- The academic transcript document alone generated 31 chunks.
+- The TOEFL report generated six chunks.
+- Multiple resume versions were present, creating opportunities for repeated retrieval of the same underlying qualifications.
+- The inventory alone did not demonstrate a parsing failure or prove that multilingual duplication was the primary source of retrieval errors.
+
+### 3. Document Scope and Deduplication Comparison
+
+Used `test_document_scope.py` to compare:
+
+- A: Retrieval using all indexed personal documents, excluding the known sample document.
+- B: Retrieval using a curated document subset.
+- C: Curated retrieval with the existing semantic deduplication logic.
+
+Initial requirements tested:
+
+- R1: Master's degree
+- R7: Problem-solving skills
+- R8: English communication
+- R15: Interest in Japanese culture, anime, or entertainment industries
+
+Key findings:
+
+- Reducing the number of resume versions did not consistently improve evidence quality.
+- Removing some resume sources sometimes increased the proportion of academic transcript chunks in the results.
+- Relevant evidence from the Japanese career history document remained retrievable in the curated experiment.
+- The existing `is_duplicate()` function produced no changes to the final Top-5 results for the four tested requirements.
+- Cross-language and cross-document duplication could not be reliably addressed by the current chunk-level similarity checks.
+
+Conclusion:
+
+Simple document filtering and the current semantic deduplication method were insufficient to resolve the observed evidence problems.
+
+### 4. Retrieval Recall Experiment
+
+Created and executed:
+
+`tests/test_recall_diagnostics.py`
+
+Compared four experimental strategies:
+
+- A: Vector Top-15 followed by CrossEncoder reranking.
+- B: Vector Top-30 followed by CrossEncoder reranking.
+- C: Source-balanced candidate selection followed by reranking.
+- D: Document-category-routed candidate selection followed by reranking.
+
+Initial requirements:
+
+- R1: Master's degree
+- R8: English communication
+- R15: Japanese culture, anime, or entertainment interest
+
+Key findings:
+
+- R1 produced identical final Top-5 results with Vector Top-15 and Top-30.
+- R8 returned different TOEFL chunks when the candidate pool expanded.
+- Source balancing did not consistently improve the relevance of retrieved content.
+- The experimental category routing excluded TOEFL evidence from the final R8 Top-5.
+- R15 continued to return weakly relevant chunks despite having no identified direct supporting evidence.
+- Increasing candidate pool size changed retrieval results but did not necessarily improve factual correctness.
+
+Conclusion:
+
+Retrieval quality could not be evaluated by similarity scores, candidate diversity, or ranking order alone. Direct factual relevance and evidence completeness were necessary evaluation criteria.
+
+### 5. TOEFL Document Extraction Investigation
+
+Investigated the indexed chunks from:
+
+`外国語（英語）試験成績証明書.pdf`
+
+The six indexed chunks contained:
+
+- Candidate identification information
+- General TOEFL score-range descriptions
+- Test information
+- Institution codes
+- Administrative and verification notes
+
+However, the indexed chunks did not contain the candidate's actual TOEFL total score or individual section scores.
+
+The original PDF was subsequently inspected.
+
+The original document contained:
+
+- TOEFL iBT total score: 99/120
+- Reading: 24
+- Listening: 29
+- Speaking: 23
+- Writing: 23
+- Test date: May 20, 2023
+
+These values were visible in the original document and available in its text layer, but were absent from the indexed ChromaDB chunks.
+
+This established a concrete case of information loss somewhere between source document extraction and the final indexed representation.
+
+The exact failure point within parsing, chunking, or indexing has not yet been isolated.
+
+Conclusion:
+
+Improving retrieval or reranking alone cannot recover facts absent from the indexed content.
+
+### 6. Architectural Conclusions
+
+The experiments identified three distinct classes of problems:
+
+**Document-level problems**
+
+- Multiple document versions and languages may describe the same underlying facts.
+- Source documents contain both useful facts and irrelevant administrative or explanatory information.
+- Some important information is not preserved in the final indexed chunks.
+
+**Retrieval-level problems**
+
+- Vector similarity and CrossEncoder relevance scores do not establish qualification validity.
+- Fixed Top-K selection may return irrelevant candidates when direct evidence is unavailable.
+- Source balancing and category routing do not automatically improve evidence quality.
+- The current deduplication function does not provide reliable fact-level deduplication.
+
+**Matching-level problems**
+
+- Retrieved chunks should be treated as candidate context rather than verified evidence.
+- Multiple sources describing one experience should not be counted as independent experiences.
+- Matching should distinguish supported, partially supported, unsupported, and unknown qualifications.
+- Evidence citations must remain traceable to original documents.
+
+### 7. Proposed Architecture Revision
+
+Proposed direction:
+
+`Documents → Document Preprocessing → Fact Extraction → Chunking / Indexing → RAG Retrieval → LLM Matching → Recommendations`
+
+Planned preprocessing responsibilities:
+
+- Identify document types and languages.
+- Extract source content using appropriate parsers.
+- Improve preservation of important factual information.
+- Use a single LLM extraction pass where semantic interpretation is needed.
+- Represent extracted facts with source references.
+- Associate repeated facts across languages and document versions.
+- Preserve original document content for verification.
+- Cache preprocessing results using file hashes.
+
+The preprocessing stage should use a hybrid approach:
+
+- Standard parsing and validation for deterministic tasks.
+- LLM-based structured extraction for semantic understanding.
+- No additional multi-agent architecture.
+- No mandatory multi-stage Evidence → Merge → Profile pipeline.
+
+This architecture is proposed but has not yet been implemented.
+
+### 8. Diagnostic Outputs
+
+Generated local diagnostic reports:
+
+- `data/diagnostics/01_index_inventory.csv`
+- `data/diagnostics/02_evidence_comparison.csv`
+- `data/diagnostics/03_comparison_summary.csv`
+- `data/diagnostics/04_recall_detail.csv`
+- `data/diagnostics/05_recall_summary.csv`
+- `data/diagnostics/06_toefl_chunks.csv`
+
+These files may contain personal information and document text and must remain excluded from Git version control.
+
+### 9. Lessons Learned
+
+- Successful execution does not establish retrieval correctness.
+- Better reranking does not necessarily mean better evidence quality.
+- Chunk-level deduplication does not solve fact-level duplication.
+- Document preprocessing quality should be validated before retrieval optimization.
+- Increasing architectural complexity without clear evaluation criteria can produce limited practical benefits.
+- Development decisions should prioritize the usefulness and factual reliability of final matching results rather than intermediate similarity metrics.
+
+### Next Steps
+
+1. Design a lightweight Document Preprocessing module.
+2. Define a structured fact representation with source references.
+3. Determine how to preserve important information from complex PDF layouts.
+4. Integrate LLM-based fact extraction with file-hash caching.
+5. Update ChromaDB indexing to support useful structured facts.
+6. Revise evidence retrieval to avoid forced Top-K evidence selection.
+7. Adapt the matching analyzer to use factual evidence rather than unverified chunks.
+8. Continue toward the JobMatch MVP GUI after the core matching pipeline becomes reliable.
+
+The immediate next development priority is Document Preprocessing, not additional reranker or deduplication tuning.
+
+
+----------------------------------------------------------------

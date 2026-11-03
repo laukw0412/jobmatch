@@ -42,3 +42,23 @@ data/test_*.json
 
 # Web extraction benchmarks
 data/benchmarks/
+
+# JobMatch personal documents and local data
+data/documents/
+data/chroma/
+data/diagnostics/
+
+# Generated candidate data and matching results
+data/test_structured_job.json
+data/test_requirement_evidence*.json
+data/test_matching_result*.json
+
+# Local document preprocessing cache (planned)
+data/preprocessed/
+data/cache/
+
+# Python test cache
+.pytest_cache/
+
+# Hugging Face local cache
+.cache/huggingface/

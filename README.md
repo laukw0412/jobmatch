@@ -1,331 +1,374 @@
-
 # JobMatch
 
-JobMatch is an AI-assisted job matching and career analysis application that uses Large Language Models (LLMs) and Retrieval-Augmented Generation (RAG) to evaluate candidate qualifications against job descriptions.
+JobMatch is an AI-assisted job matching and career analysis application designed to evaluate candidate qualifications against job descriptions and provide evidence-based application recommendations.
 
-The project aims to provide evidence-based candidate-job matching, identify qualification gaps, and generate actionable application recommendations.
+The project is also developed as a practical software engineering and AI application portfolio project, focusing on document processing, Retrieval-Augmented Generation (RAG), LLM integration, and information retrieval evaluation.
 
-JobMatch is also developed as a practical software engineering and applied AI portfolio project.
+## Project Goals
 
-## Goals
-
-JobMatch aims to support:
+JobMatch aims to provide:
 
 - Multi-format candidate document ingestion
-- Personal document indexing and semantic retrieval
-- Job description input through text, files, and URLs
-- LLM-based structured job requirement extraction
-- Requirement-based RAG retrieval
+- Personal document management
+- Job description extraction from text, PDF, and web sources
+- Structured job requirement analysis
+- RAG-based candidate information retrieval
 - Evidence-based candidate-job matching
 - Qualification and skill-gap analysis
-- Application recommendations
+- Actionable application recommendations
 - A standalone graphical user interface
-- Future job discovery and recommendation capabilities
-- Future local LLM integration
+- Optional local LLM support in a later development stage
+
+The intended user workflow is:
+
+**Upload Documents → Build Candidate Knowledge Base → Enter Job Description → Analyze Matching → Review Results and Recommendations**
 
 ## Current Status
 
-Core document processing, RAG infrastructure, and job requirement extraction have been implemented and initially tested.
+**Development Phase: RAG Evaluation and Architecture Revision**
 
-Requirement-based RAG retrieval is operational, but retrieval quality still needs to be validated using a representative collection of real candidate documents.
+The project currently includes working implementations of document parsing, chunking, persistent vector indexing, structured job requirement extraction, candidate information retrieval, CrossEncoder reranking, and experimental LLM-based matching.
 
-The final matching analysis and standalone GUI are not yet implemented.
+These components have been implemented and tested individually or through integration experiments.
 
-### Implemented Features
+However, the complete application is not yet considered a reliable end-to-end MVP.
+
+Retrieval experiments conducted on November 3, 2026, identified limitations in document information preservation, fact-level duplication, retrieval relevance, and evidence reliability.
+
+The current development priority is introducing a lightweight document preprocessing and fact extraction stage before proceeding with the final matching workflow and graphical interface.
+
+## Implemented Features
+
+### 1. Multi-Format Document Processing
+
+Supported formats:
+
+- PDF (`.pdf`)
+- Word (`.docx`)
+- Excel (`.xlsx`, `.xls`)
+- Images (`.png`, `.jpg`, `.jpeg`)
+- Plain text (`.txt`)
+- Markdown (`.md`)
+
+Docling is used as the primary layout-aware parser for supported documents, with format-specific extraction and fallback mechanisms where appropriate.
+
+### 2. Document Chunking
+
+Implemented capabilities include:
+
+- Docling HybridChunker
+- Text-based fallback chunking
+- LangChain RecursiveCharacterTextSplitter
+- Source filename and path tracking
+- Chunk index metadata
+
+Documents are converted into chunks for embedding and retrieval.
+
+### 3. Persistent RAG Indexing
+
+Implemented using:
+
+- OpenAI Embeddings
+- ChromaDB
+- Persistent local vector storage
+- File-hash-based change detection
+- Incremental indexing
+- Skipping unchanged documents
+- Updating modified documents
+
+The indexing pipeline supports processing multiple documents without rebuilding the complete index on every execution.
+
+### 4. Job Description Processing
+
+LLM-based structured job description extraction is implemented.
+
+Extracted requirements include:
+
+- Requirement description
+- Requirement category
+- Requirement priority (`required` or `preferred`)
+
+The structured requirements serve as queries for candidate information retrieval.
+
+### 5. Requirement-Based Retrieval
+
+The retrieval system supports:
+
+- Vector similarity search
+- Source-aware candidate selection
+- Maximal Marginal Relevance (MMR)
+- CrossEncoder reranking
+- Chunk-level semantic deduplication
+- Source metadata tracking
+
+These methods have been implemented or evaluated experimentally.
+
+The current evidence selection pipeline remains under review due to redundancy and relevance limitations.
+
+### 6. CrossEncoder Reranking
+
+The project integrates:
+
+`BAAI/bge-reranker-v2-m3`
+
+CrossEncoder reranking evaluates the relevance between a job requirement and retrieved document chunks.
+
+Integration testing confirmed that candidates can be reordered according to CrossEncoder scores.
+
+However, reranking does not independently verify qualifications or resolve repeated underlying facts across different documents.
+
+### 7. Experimental LLM Matching
+
+An experimental matching analyzer uses structured LLM outputs to generate:
+
+- Requirement-level matching judgments
+- Matching explanations
+- Supporting evidence references
+- Candidate strengths
+- Qualification gaps
+- Overall matching summaries
+- Application recommendations
+
+The analyzer requires further revision to ensure that judgments are grounded in complete and reliable candidate information.
+
+## Current Architecture
+
+The existing pipeline consists of document indexing and requirement-based matching.
+
+**Document Indexing**
+
+Documents → Extraction → Chunking → OpenAI Embeddings → ChromaDB
+
+**Job Analysis and Retrieval**
+
+Job Description → LLM Requirement Extraction → Vector Retrieval → CrossEncoder Reranking → Evidence Selection
+
+**Matching Analysis**
+
+Structured Requirements + Retrieved Candidate Context → LLM Matching → Matching Results and Recommendations
+
+Some components are currently executed through development and integration tests rather than a completed standalone application.
+
+## Retrieval Evaluation
+
+Diagnostic experiments were conducted on November 3, 2026, using the existing local candidate document collection.
+
+### Experiment 1: Document Inventory
+
+The local dataset contained 11 documents and 89 indexed chunks.
+
+| Document Category | Indexed Chunks |
+|---|---:|
+| Resumes and resume-related documents | 31 |
+| Certificates and academic records | 43 |
+| Career history | 12 |
+| Test sample | 3 |
+| **Total** | **89** |
+
+**Findings**
+
+- Multiple resumes in different languages and formats were indexed.
+- Four major resume files accounted for 30 chunks.
+- One academic transcript document generated 31 chunks.
+- The inventory suggested potential document redundancy but did not establish that multilingual duplication was the primary retrieval problem.
+
+### Experiment 2: Document Scope and Deduplication
+
+Compared three retrieval configurations:
+
+- **A — All Documents:** Retrieve from all indexed personal documents, excluding the known sample.
+- **B — Curated Documents:** Restrict retrieval to a selected set of candidate documents.
+- **C — Curated + Deduplication:** Apply the existing semantic deduplication method to curated retrieval results.
+
+Requirements tested:
+
+- R1: Master's degree
+- R7: Problem-solving skills
+- R8: English communication
+- R15: Japanese culture, anime, or entertainment interest
+
+**Findings**
+
+- Restricting document versions did not consistently improve evidence quality.
+- Removing certain resume sources sometimes increased the proportion of academic transcript chunks.
+- Relevant career history information remained retrievable in the curated experiment.
+- The current semantic deduplication function produced no changes to the final Top-5 results for these four requirements.
+- Fact-level duplication could not be reliably addressed through chunk-level similarity checks alone.
+
+**Conclusion:** Simple document filtering and semantic deduplication are insufficient to resolve the current evidence retrieval problems.
+
+### Experiment 3: Retrieval Recall Comparison
+
+Compared four strategies:
+
+1. Vector Top-15 + CrossEncoder
+2. Vector Top-30 + CrossEncoder
+3. Source-balanced candidate selection
+4. Document-category-routed candidate selection
+
+Requirements tested:
+
+- R1: Master's degree
+- R8: English communication
+- R15: Japanese culture, anime, or entertainment interest
+
+**Findings**
+
+- Expanding the candidate pool changed some reranked results.
+- R1 produced identical final Top-5 results with Vector Top-15 and Top-30.
+- R8 retrieved different TOEFL document chunks when the candidate pool increased.
+- Source balancing did not consistently improve factual relevance.
+- Experimental document-category routing could exclude important documents.
+- R15 continued to return weakly relevant candidates despite having no identified direct supporting evidence.
+
+**Conclusion:** Increasing Top-K, balancing sources, or routing document categories does not necessarily improve factual evidence quality.
+
+### Experiment 4: TOEFL Document Information Loss
+
+Investigated the retrieval results and original content of a TOEFL iBT score report.
+
+The original PDF contained:
+
+| Field | Original Document |
+|---|---:|
+| Total Score | 99/120 |
+| Reading | 24 |
+| Listening | 29 |
+| Speaking | 23 |
+| Writing | 23 |
+
+However, the six indexed chunks contained general score-range explanations, administrative information, and candidate identification details without preserving these actual scores.
+
+The information loss occurred somewhere between source document processing and the final indexed representation. The exact stage has not yet been isolated.
+
+**Conclusion:** Retrieval and reranking cannot recover important facts that are absent from the index. Improving document preprocessing and information preservation is therefore a higher priority than additional similarity-based optimization.
+
+## Architectural Findings
+
+The experiments identified three main problem areas.
+
+### 1. Document Representation
+
+Multiple resume versions may describe the same underlying qualifications, while important information from complex PDF layouts may be absent from indexed content.
+
+A document should not be considered successfully processed solely because text extraction and chunk generation completed without errors.
+
+### 2. Retrieval and Evidence Quality
+
+Vector similarity and CrossEncoder relevance scores do not establish whether a job requirement is satisfied.
+
+The existing fixed Top-K selection can return irrelevant candidate chunks when no direct evidence is available.
+
+Chunk-level semantic deduplication also does not reliably identify different descriptions of the same underlying experience.
+
+### 3. Matching Reliability
+
+Retrieved document chunks should be treated as candidate context rather than verified evidence.
+
+Matching analysis must distinguish between:
+
+- Directly supported qualifications
+- Partially supported qualifications
+- Explicitly unmet requirements
+- Unknown or insufficiently documented qualifications
+
+Repeated descriptions of the same experience should not be treated as independent evidence of multiple experiences.
+
+## Planned Architecture Revision
+
+The next development stage will introduce document preprocessing before retrieval.
 
 **Document Processing**
 
-- PDF, DOCX, XLSX, XLS, image, TXT, and Markdown document support
-- Layout-aware document processing using Docling
-- OCR-based text extraction for images
-- Document chunking using Docling HybridChunker
-- RecursiveCharacterTextSplitter fallback for plain text and unsupported chunking cases
+Documents → Format Identification → Content Extraction → LLM Structured Fact Extraction → Source Validation → Cached Fact Records
 
-**RAG Infrastructure**
+**Knowledge Base**
 
-- OpenAI embeddings
-- Chroma vector database
-- Persistent document indexing
-- Multi-document indexing
-- File hash-based change detection
-- Indexing statistics for indexed, updated, skipped, and failed documents
-- Semantic retrieval with source metadata
+Validated Fact Records → Embeddings → ChromaDB
 
-**Job Description Processing**
+**Job Matching**
 
-- Public HTTPS job URL extraction
-- Requests and Trafilatura-based HTML extraction
-- Playwright fallback for JavaScript-rendered pages
-- Basic invalid-page detection
-- Manual review and confirmation workflow in the test interface
-- LLM-based structured extraction using Pydantic
-- Separation of responsibilities, required qualifications, and preferred qualifications
+Job Description → Structured Requirements → RAG Retrieval → Evidence-Aware LLM Matching → Recommendations
 
-**Requirement-based Retrieval**
+The planned approach will combine deterministic document processing with LLM-based semantic extraction.
 
-- Individual semantic queries for structured job requirements
-- Retrieval of candidate evidence from Chroma
-- Source-diversity selection
-- Requirement-to-evidence associations
-- Preservation of source information and retrieval distances
+### Design Principles
 
-### Work in Progress
+- Preserve original documents and their source references.
+- Improve extraction of important facts from complex layouts.
+- Represent qualifications as structured, retrievable information.
+- Support multilingual documents and multiple resume versions.
+- Identify repeated underlying facts without discarding useful source information.
+- Cache document preprocessing results using file hashes.
+- Avoid unnecessary multi-stage LLM pipelines.
+- Keep the application architecture simple and practical.
+- Prioritize factual reliability over similarity scores alone.
 
-- Real-document RAG evaluation
-- Evidence relevance and conflict assessment
-- LLM-based candidate-job matching
-- Matching scores and requirement-level assessments
-- Application recommendations
-- Readable and editable JD preview GUI
-
-## Architecture
-
-The current workflow is:
-
-```text
-Candidate Documents
-        |
-        v
-Document Extraction
-        |
-        v
-Document Chunking
-        |
-        v
-OpenAI Embeddings
-        |
-        v
-Chroma Vector Database
-        |
-        | Candidate Evidence
-        |
-Job URL / JD Text
-        |
-        v
-JD Text Extraction
-        |
-        v
-User Review and Confirmation
-        |
-        v
-LLM Structured JD Extraction
-        |
-        v
-Individual Job Requirements
-        |
-        v
-Requirement-based RAG Retrieval
-        |
-        v
-Requirement-Evidence Results
-        |
-        v
-Matching Analysis (Planned)
-        |
-        v
-Matching Table and Recommendations (Planned)
-```
-
-The original job description is preserved for final matching analysis.
-
-Structured requirements are used to generate focused retrieval queries instead of relying exclusively on a single embedding of the complete job description.
-
-## Document Processing
-
-Candidate documents are converted into a common document representation before chunking and indexing.
-
-Supported file extensions include:
-
-- `.pdf`
-- `.docx`
-- `.xlsx`
-- `.xls`
-- `.png`
-- `.jpg`
-- `.jpeg`
-- `.txt`
-- `.md`
-
-Docling is used as the primary layout-aware processing solution where applicable.
-
-Document chunking uses Docling HybridChunker when available and falls back to recursive text splitting when necessary.
-
-## RAG Implementation
-
-The RAG pipeline consists of:
-
-1. Candidate document extraction
-2. Document chunking
-3. Embedding generation
-4. Chroma indexing
-5. Semantic retrieval
-
-The multi-document indexing workflow uses file hashes to detect unchanged and modified documents, avoiding unnecessary re-indexing.
-
-Retrieved evidence includes:
-
-- Chunk text
-- Source filename
-- Source path
-- Chunk index
-- Vector search distance
-
-Retrieval distance is treated as a semantic relevance signal, not as direct proof that a candidate meets a job requirement.
-
-## Job Description Extraction
-
-Job descriptions can currently be extracted from selected public URLs or supplied as local text.
-
-The URL extraction workflow uses:
-
-1. Requests and Trafilatura
-2. Playwright fallback when necessary
-3. Basic job-related text validation
-
-Website extraction may fail because of authentication, rate limiting, JavaScript rendering, or collapsed job descriptions.
-
-The current test workflow allows users to inspect and confirm the extracted text before further processing.
-
-A dedicated JD preview and editing interface is planned for the GUI.
-
-## Structured Job Requirements
-
-OpenAI Structured Outputs and Pydantic are used to convert job descriptions into structured data.
-
-The current structured representation includes:
-
-- Job title
-- Company name
-- Location
-- Responsibilities
-- Candidate requirements
-- Requirement categories
-- Required or preferred priority
-
-The extraction process aims to preserve the original meaning of requirements, including alternative conditions such as "PyTorch or TensorFlow".
-
-## Requirement-based RAG Retrieval
-
-Each structured requirement is used as an independent semantic retrieval query.
-
-The retrieval workflow:
-
-1. Iterates through job requirements
-2. Retrieves candidate chunks from Chroma
-3. Sorts retrieved chunks by semantic distance
-4. Prioritizes different document sources
-5. Associates selected evidence with the original requirement
-
-The default configuration retrieves up to 15 candidate chunks and selects up to 5 evidence chunks per requirement.
-
-The source-diversity strategy is intended to reduce domination by a single document. It does not resolve semantic duplicates, outdated records, or conflicting information.
-
-These issues will be considered during evidence evaluation and matching analysis.
-
-## Testing
-
-Initial tests have covered:
-
-- Multi-format document extraction
-- Document chunking
-- Vector indexing and retrieval
-- Multi-document indexing and change detection
-- Public job URL extraction
-- Structured job requirement extraction
-- Requirement-based RAG retrieval
-
-A real Sony AI Application Engineer job description was used to validate structured extraction and retrieval.
-
-The structured extraction successfully preserved:
-
-- 5 responsibilities
-- 8 required qualifications
-- 8 preferred qualifications
-
-Requirement-based retrieval successfully processed all 16 qualifications.
-
-Current retrieval evaluation remains limited because the active test collection contains only a small amount of candidate evidence.
-
-Testing against real resumes, academic records, language certificates, and research documents is the next priority.
+**Note:** Document preprocessing, structured fact indexing, and the revised matching pipeline are planned features and have not yet been implemented.
 
 ## Technology Stack
 
-- Python 3.12
-- OpenAI API
-- Pydantic
-- Docling
-- LangChain text splitters
-- ChromaDB
-- Trafilatura
-- Requests
-- Playwright
-- python-dotenv
+- **Language:** Python 3.12
+- **Data Validation:** Pydantic
+- **LLM and Embeddings:** OpenAI API
+- **Document Processing:** Docling
+- **Text Chunking:** LangChain
+- **Vector Database:** ChromaDB
+- **Reranking:** Sentence Transformers
+- **Machine Learning:** PyTorch, NumPy
+- **Development Environment:** Windows 11, Conda, Visual Studio Code
+- **Version Control:** Git and GitHub
 
-## Development Environment
+## Development Tests
 
-- Windows 11
-- Conda
-- Visual Studio Code
-- Git and GitHub
+Representative test scripts include:
 
-## Roadmap
+- `tests/test_chunking.py`
+- `tests/test_multiformat_chunking.py`
+- `tests/test_vector_search.py`
+- `tests/test_multi_index.py`
+- `tests/test_multi_retrieval.py`
+- `tests/test_reranker.py`
+- `tests/test_rerank_integration.py`
+- `tests/test_document_scope.py`
+- `tests/test_recall_diagnostics.py`
 
-### Phase 1: Document Processing
+The diagnostic tests are designed to examine indexing, retrieval behavior, candidate redundancy, source distribution, and document information preservation.
 
-- [x] Project initialization
-- [x] Multi-format document extraction
-- [x] Layout-aware document processing
-- [x] Document chunking
+Local experimental results are stored separately from source code.
 
-### Phase 2: RAG Infrastructure
+## Current Limitations
 
-- [x] Embedding generation
-- [x] Persistent Chroma indexing
-- [x] Multi-document indexing
-- [x] File hash-based change detection
-- [x] Basic semantic retrieval
+- The standalone GUI is not yet implemented.
+- Structured document preprocessing is not yet implemented.
+- Some important information may be lost before indexing.
+- Multiple document versions may create repeated factual content.
+- Existing chunk-level deduplication does not reliably solve fact-level redundancy.
+- Retrieval relevance scores do not independently establish evidence validity.
+- The matching analyzer requires stronger factual grounding.
+- Local LLM inference is not yet integrated.
 
-### Phase 3: Job Description Processing
+## Next Development Priorities
 
-- [x] Basic public URL extraction
-- [x] Structured requirement extraction
-- [x] Required and preferred requirement classification
-- [x] Terminal-based JD review and confirmation
-- [ ] GUI-based JD preview and editing
+1. Implement lightweight document preprocessing.
+2. Introduce LLM-based structured fact extraction.
+3. Improve preservation of important information from complex PDF documents.
+4. Add source verification and document-hash-based preprocessing caching.
+5. Update indexing to support structured fact retrieval.
+6. Revise evidence selection and LLM matching.
+7. Develop the standalone graphical user interface.
+8. Add an optional local LLM provider after the primary workflow is functional.
 
-### Phase 4: Evidence-based Matching
+## Development Documentation
 
-- [x] Requirement-based RAG retrieval
-- [ ] Real-document retrieval evaluation
-- [ ] Evidence relevance and conflict assessment
-- [ ] LLM-based matching analysis
-- [ ] Matching scores and explanations
-- [ ] Skill-gap and application recommendations
+Detailed development history, experiments, and architecture decisions are documented in:
 
-### Phase 5: Application Interface
+`develop_log/development-log.md`
 
-- [ ] Standalone GUI
-- [ ] Candidate document management
-- [ ] JD input and preview interface
-- [ ] Matching results dashboard
+## Privacy
 
-### Future Extensions
+Personal documents, local vector databases, extracted candidate information, and diagnostic outputs are excluded from version control.
 
-- [ ] Local LLM provider integration
-- [ ] Job discovery and recommendation
-- [ ] Company and job information enrichment
-- [ ] Career development recommendations
+When OpenAI API processing is enabled, selected document content or extracted information may be transmitted to the API.
 
-## Privacy and Data Handling
-
-Candidate documents may contain personal or sensitive information.
-
-Local document files, API credentials, and generated test data should not be committed to the repository.
-
-The project uses external OpenAI API services for selected LLM and embedding operations. Documents or extracted text sent to these services are not processed entirely locally.
-
-## Project Purpose
-
-JobMatch is intended to become a practical job application decision-support tool.
-
-Rather than relying solely on general semantic similarity, the project aims to connect individual job requirements with relevant candidate evidence and produce explainable, actionable matching assessments.
+API credentials and private candidate data must not be committed to public repositories.
