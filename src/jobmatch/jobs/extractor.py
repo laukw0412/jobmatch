@@ -32,12 +32,15 @@ Rules:
 def extract_job_description(
     jd_text: str,
     model: str = "gpt-4.1-mini",
+    *,
+    client: OpenAI | None = None,
 ) -> JobDescription:
     if not jd_text.strip():
         raise ValueError("Job description cannot be empty.")
 
-    load_dotenv()
-    client = OpenAI()
+    if client is None:
+        load_dotenv()
+        client = OpenAI()
 
     response = client.chat.completions.parse(
         model=model,
@@ -52,6 +55,7 @@ def extract_job_description(
             },
         ],
         response_format=JobDescription,
+        store=False,
     )
 
     result = response.choices[0].message.parsed

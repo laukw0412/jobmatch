@@ -3,7 +3,8 @@ import re
 import numpy as np
 
 from jobmatch.jobs.models import JobDescription
-from jobmatch.matching.reranker import rerank_chunks
+from jobmatch.rag.indexing import CHROMA_PATH
+from jobmatch.rag.indexing import COLLECTION_NAME
 from jobmatch.rag.retrieval import retrieve_chunks
 
 
@@ -185,6 +186,8 @@ def select_evidence(
             remaining.remove(best_chunk)
 
     else:
+        from jobmatch.matching.reranker import rerank_chunks
+
         if query is None or not query.strip():
             raise ValueError(
                 "Reranking requires a nonempty query."
@@ -237,6 +240,12 @@ def retrieve_job_requirements(
     strategy: str = "source",
     lambda_mult: float = 0.7,
     excluded_files: set[str] | None = None,
+    excluded_source_paths: set[str] | None = None,
+    chroma_path: str = CHROMA_PATH,
+    collection_name: str = COLLECTION_NAME,
+    included_source_paths: set[str] | None = None,
+    client=None,
+    progress=None,
 ) -> list[dict]:
     """Retrieve candidate evidence for every job requirement."""
 
@@ -259,12 +268,19 @@ def retrieve_job_requirements(
     results = []
 
     for index, requirement in enumerate(job.requirements):
+        if progress is not None:
+            progress("检索补充证据 {}/{}".format(index + 1, len(job.requirements)))
         candidates = retrieve_chunks(
             query=requirement.description,
             top_k=top_k * candidate_multiplier,
             include_embeddings=(
                 strategy in ("mmr", "rerank")
             ),
+            excluded_source_paths=excluded_source_paths,
+            chroma_path=chroma_path,
+            collection_name=collection_name,
+            included_source_paths=included_source_paths,
+            client=client,
         )
 
         candidates = [

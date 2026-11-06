@@ -25,7 +25,7 @@ The intended user workflow is:
 
 ## Current Status
 
-**Development Phase: RAG Evaluation and Architecture Revision**
+**Development Phase: Desktop MVP Integration**
 
 The project currently includes working implementations of document parsing, chunking, persistent vector indexing, structured job requirement extraction, candidate information retrieval, CrossEncoder reranking, and experimental LLM-based matching.
 
@@ -35,7 +35,41 @@ However, the complete application is not yet considered a reliable end-to-end MV
 
 Retrieval experiments conducted on November 3, 2026, identified limitations in document information preservation, fact-level duplication, retrieval relevance, and evidence reliability.
 
-Following a subsequent architecture reconsideration on November 5, 2026, the **accepted target direction** is **Full-Context + RAG Augmentation**. Selected complete core candidate materials should be available to the matching LLM when feasible, while RAG remains mandatory for supplementary, traceable evidence retrieval. Structured fact extraction is an optional technique to address demonstrated extraction failures, **not a mandatory gateway** to candidate information. This target has **not yet been implemented or validated end-to-end**.
+Following a subsequent architecture reconsideration on November 5, 2026, the **accepted target direction** is **Full-Context + RAG Augmentation**. Selected complete core candidate materials should be available to the matching LLM when feasible, while RAG remains mandatory for supplementary, traceable evidence retrieval. Structured fact extraction is an optional technique to address demonstrated extraction failures, **not a mandatory gateway** to candidate information. On November 6, a minimal function workflow was implemented and verified with seventeen offline tests using synthetic documents and mocked OpenAI/Chroma interfaces. Real-document parsing quality, live retrieval, and LLM matching have not been validated for this combined workflow.
+
+The MVP uses **user-selected core files**, not automatic selection. `jobmatch.matching.workflow.match_job(confirmed_jd_text, core_document_paths, ...)` loads complete parsed text from explicitly selected files inside `data/documents/`, extracts requirements, retrieves supplementary evidence excluding core paths, and runs combined matching. The caller must first obtain JD confirmation and authorization for API transmission. This function interface is now complemented by the desktop prototype described below.
+
+Both core and RAG citations retain source type, filename/path, corresponding text, and an exact quote checked against that text. IDs use separate namespaces (`core:N` and `rag:REQUIREMENT_ID:N`); old RAG-only numeric indices remain for compatibility. A configurable character cap (60,000 by default, including the final serialized matching payload and system prompt) rejects oversized input without truncation. It is not an exact token/cost budget. Uncited judgments become `unknown`, with validation warnings when model summaries have not been revalidated.
+
+Complete-document Docling export now renders merged-cell text once and uses compact Markdown tables. Six synthetic export regression checks and the seventeen matching checks passed. A local, network-blocked rerun of the selected English resume reduced its exported text from 4,445 to 2,372 characters while retaining the native text's normalized word-character counts. This corrects a demonstrated export duplication issue; it does not establish semantic completeness or change existing RAG vectors.
+
+Retrieval now accepts an explicit database path, collection, and source allowlist for isolated experiments. A first real attempt stopped before retrieval because persistent Chroma client settings differed. Clients now share one creation helper, and thirty focused offline checks passed, including real temporary persistent-storage tests. A user-authorized continuation reused the successful artifacts and completed six selected requirements: three matched, one partial, and two unknown, with both core and RAG citations. This validated a bounded function-level scenario, not the complete MVP; certificate score loss and citation quality issues motivated the subsequent offline repair below. See [architecture notes](docs/architecture.md#19-consistent-storage-clients-and-verified-continuation).
+
+Subsequent local repair located the English score values in recognized text nested under Docling picture nodes. Complete Markdown export and HybridChunker serialization now traverse that text. Local checks preserved all five score-label/value combinations in complete text and in individual chunks; the English report now produces eight chunks. Citation instructions also request quotes covering every essential condition, allow multiple passages from one source, and add an advisory check for the observed Python/framework excerpt gap. Forty focused offline checks passed. At that offline milestone, the repairs had not been re-indexed into existing databases or retested with a live LLM; lexical quote warnings do not determine qualification fulfillment.
+
+A later combined live check embedded the repaired certificate chunks in a new isolated database and evaluated English and Python/frameworks with four API requests. Score evidence was retrieved and valid Python/framework excerpts were returned, but additional nonverbatim citations caused strict validation to reject the final result. No paid retry occurred. Existing production vectors remain unchanged; position references and reviewable reporting were subsequently implemented as described below, while live-model line selection remains unverified. See [targeted check details](docs/architecture.md#111-consolidated-two-requirement-live-check).
+
+Position-based citations and reviewable reporting are now implemented. Model citations contain only a source ID and inclusive, one-based line range; the application extracts the untouched original lines. Invalid references affect their requirement rather than aborting the whole result. Citation failures produce `unknown` with explicit review issues while retaining valid excerpts; narrow lexical coverage warnings remain advisory. Aggregate strengths, gaps, and recommendations are suppressed whenever review is required. `match_job(..., report_path=...)` optionally writes a Markdown report without overwriting files, and `python -m jobmatch.matching.report --input <result.json> --output <report.md>` renders existing results without API calls. Twenty-eight relevant offline checks passed, including two integrated report checks and adaptation of existing tests; a legacy-cache replay generated a review report. New live-model line selection has not been verified; the desktop prototype described below has offline integrated verification.
+
+## Run the Desktop Prototype
+
+The PySide6 desktop prototype connects explicit core/supplementary selection, editable JD confirmation, mandatory RAG, background matching, requirement-level evidence, review warnings, and local reports. Two integrated offscreen tests passed using synthetic documents, real temporary Chroma storage, and mocked APIs; twenty-six related backend checks also passed. Real GUI matching quality and complete MVP acceptance remain unverified.
+
+Use the `jobmatch` Conda environment. PySide6 6.12.0 was installed there with user approval; the base environment was not changed. From the repository root in PowerShell:
+
+```powershell
+& 'E:\Anaconda\envs\jobmatch\python.exe' -m jobmatch
+```
+
+1. Place candidate files in `data/documents/`. Startup lists supported filenames only; it does not parse documents or call APIs.
+2. Select at least one **core** document and one **supplementary** document. No files are selected automatically, and a file cannot serve both roles.
+3. Paste the JD, or fetch an HTTPS job URL, then review/edit and confirm the text. Failed URL extraction preserves manual input.
+4. Confirm transmission of selected material text and JD to the official OpenAI API, then start analysis. Configure `OPENAI_API_KEY` locally; never commit it. Calls incur costs, have no hard spending cap, and disable automatic SDK retries. The desktop client bypasses environment proxy settings.
+5. Review each requirement, source lines, and any `unknown`/review warnings. Full reports are saved locally; Markdown export refuses to overwrite an existing file.
+
+The selected supplementary corpus uses a reusable cache under `data/cache/desktop_evidence/`, keyed by paths, file hashes, and a parser revision marker. Unchanged files reuse embeddings; JD extraction, query embeddings, and matching still incur calls each run. The desktop workflow does not open or modify production `data/chroma` / `jobmatch_documents`. Results are written under `data/test_outputs/desktop_runs/`. Both locations are Git-ignored but may contain personal data; they are not encrypted or a version-recovery system.
+
+Parsing and API work run in a background thread. Wait for an active task to finish before closing; cancellation is not implemented. PDF/image parsing can require locally cached parser assets. No standalone `.exe` has been built. The declared `jobmatch` launcher requires package installation/refresh; the module command above does not rely on it. Live GUI matching, five-version recovery, and Windows packaging remain planned.
 
 ## Implemented Features
 
@@ -145,7 +179,7 @@ Job Description → LLM Requirement Extraction → Vector Retrieval → CrossEnc
 
 **Matching Analysis**
 
-Structured Requirements + Retrieved Candidate Context → LLM Matching → Matching Results and Recommendations
+Confirmed JD + Structured Requirements + User-Selected Complete Core Text + Supplementary RAG → LLM Matching → Results with Resolved Citations
 
 Some components are currently executed through development and integration tests rather than a completed standalone application.
 
@@ -289,7 +323,7 @@ After the November 3 diagnostic experiments, a fact-only indexing direction was 
 - Preserve `matched`, `partial`, `missing`, and `unknown`, with explicit distinctions between absent evidence and evidence of unmet requirements.
 - Avoid double-counting repeated descriptions of the same qualification across resume versions.
 
-**Illustrative target flow (not yet implemented):**
+**Target flow (Python workflow and desktop prototype implemented; quality checks, GUI live validation, version recovery, and packaging remain incomplete):**
 
 ```text
 Candidate Documents ──> Source Parsing / Quality Checks ──> Selected Complete Core Context ─┐
@@ -353,7 +387,7 @@ Local experimental results are stored separately from source code.
 
 ## Current Limitations
 
-- The standalone GUI is not yet implemented.
+- The PySide6 desktop prototype is implemented; live GUI matching and standalone Windows packaging remain unverified/unimplemented.
 - Structured document preprocessing is not yet implemented.
 - Some important information may be lost before indexing.
 - Multiple document versions may create repeated factual content.
@@ -364,18 +398,27 @@ Local experimental results are stored separately from source code.
 
 ## Next Development Priorities
 
-1. Prototype selected complete core candidate context plus supplementary RAG evidence for requirement-level matching.
-2. Identify and fix concrete source-information loss (including TOEFL scores) without adding mandatory intermediate LLM stages.
-3. Validate retrieved evidence relevance, multilingual duplication, and `unknown` / `missing` semantics.
-4. Integrate matching output and JD confirmation into the standalone Windows GUI.
-5. Implement document updates and version recovery as required by the MVP.
-6. Integrate a replaceable local LLM provider later.
+1. Review the desktop prototype locally; perform a bounded real GUI scenario only after explicit data-transmission and cost authorization.
+2. Verify live source-line selection and semantic support, including `unknown` / `missing` behavior; offline provenance checks do not establish qualification correctness.
+3. Implement safe document updates and at least five recoverable historical versions as required by the MVP.
+4. Improve demonstrated parsing/retrieval failures and multilingual duplication without mandatory intermediate LLM stages.
+5. Package the Windows application and later integrate a replaceable LLM provider.
 
 ## Development Documentation
 
 Detailed development history, experiments, and architecture decisions are documented in:
 
 `develop_log/development-log.md`
+
+Current module interfaces, target architecture, gaps, and risks are recorded in [docs/architecture.md](docs/architecture.md).
+
+The focused offline checks can be run without paid API calls or production data access:
+
+```powershell
+conda run -n jobmatch python -B tests/test_full_context_matching.py -v
+```
+
+Do not use unrestricted test discovery: some older experimental files read private documents or call APIs at import time. The combined workflow itself does make cloud calls when invoked normally and may transmit selected candidate text; running the offline checks does not invoke that live processing.
 
 ## Privacy
 

@@ -2,11 +2,9 @@ from dotenv import load_dotenv
 import hashlib
 from pathlib import Path
 
-import chromadb
 from openai import OpenAI
 
-from jobmatch.rag.chunking import SUPPORTED_EXTENSIONS, chunk_document
-
+from jobmatch.rag.storage import create_chroma_client
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHROMA_PATH = "data/chroma"
@@ -32,6 +30,7 @@ def index_document(
     client: OpenAI,
 ) -> str:
     """Index a document, skipping files that have not changed."""
+    from jobmatch.rag.chunking import chunk_document
 
     path = Path(file_path).resolve()
 
@@ -113,6 +112,7 @@ def index_directory(
     chroma_path: str = CHROMA_PATH,
 ) -> dict:
     """Index supported documents in a directory recursively."""
+    from jobmatch.rag.chunking import SUPPORTED_EXTENSIONS
 
     directory = Path(directory)
 
@@ -124,7 +124,7 @@ def index_directory(
     # Initialize the OpenAI client
     openai_client = OpenAI()
 
-    chroma_client = chromadb.PersistentClient(path=chroma_path)
+    chroma_client = create_chroma_client(path=chroma_path)
 
     collection = chroma_client.get_or_create_collection(
         name=COLLECTION_NAME

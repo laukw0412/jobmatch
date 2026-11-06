@@ -3,24 +3,22 @@ from pathlib import Path
 
 from docling.chunking import HybridChunker
 from docling.document_converter import DocumentConverter
+from docling_core.transforms.chunker.hierarchical_chunker import ChunkingSerializerProvider
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from jobmatch.document.loader import load_document
+from jobmatch.document.models import SUPPORTED_EXTENSIONS
 
-
-SUPPORTED_EXTENSIONS = {
-    ".pdf",
-    ".docx",
-    ".xlsx",
-    ".xls",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".txt",
-    ".md",
-}
 
 _converter = DocumentConverter()
+
+
+class PictureTextSerializerProvider(ChunkingSerializerProvider):
+    def get_serializer(self, doc):
+        serializer = super().get_serializer(doc)
+        # retain recognized text nested under figures, including score diagrams
+        serializer.params = serializer.params.model_copy(update={"traverse_pictures": True})
+        return serializer
 
 
 def chunk_plain_text(
@@ -85,7 +83,7 @@ def chunk_document(file_path: str | Path) -> list[dict]:
         # Try Docling HybridChunker for other supported formats
         try:
             result = _converter.convert(str(path))
-            chunker = HybridChunker()
+            chunker = HybridChunker(serializer_provider=PictureTextSerializerProvider())
             chunks = []
 
             for item in chunker.chunk(dl_doc=result.document):

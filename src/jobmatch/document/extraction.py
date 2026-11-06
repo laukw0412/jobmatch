@@ -18,6 +18,7 @@ import xlrd
 import pytesseract # Tesseract OCR
 
 from jobmatch.document.models import DocumentContent
+from jobmatch.document.markdown import export_markdown
 
 
 def ocr_image(image):
@@ -42,7 +43,7 @@ def extract_docling(file_path):
     # converter = DocumentConverter()
     result = converter.convert(str(file_path))
 
-    return result.document.export_to_markdown()
+    return export_markdown(result.document)
 
 
 def extract_docx(file_path):

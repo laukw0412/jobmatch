@@ -1970,3 +1970,179 @@ Personal documents and derived diagnostic data should remain excluded from Git t
 2. Test source-context completeness and requirement-level matching semantics using authorized data handling.
 3. Validate the target design before changing production Chroma data or performing a broad refactor.
 4. Continue to the user-facing JD confirmation, matching report, and Windows GUI.
+
+
+----------------------------------------------------------------
+
+
+## 2026-11-06
+
+### Explicit Core Documents + Supplementary RAG
+
+The user approved a simple MVP selection policy: explicitly select core documents, such as one resume and one career history; retrieve other certificates/research/supplementary material with RAG; analyze both together; allow `unknown` without reliable evidence. Automatic core-document selection is deferred. Evidence from either route must retain its file source and corresponding text.
+
+Implemented:
+
+- `document/context.py`: load only selected core files from `data/documents/`, reuse existing parsers, read TXT/Markdown directly, retain complete parsed text and resolved paths, deduplicate selected paths, and fail explicitly for unreadable/empty/outside-root/oversized input.
+- `matching/workflow.py`: `match_job(confirmed_jd_text, core_document_paths, ...)` connects core loading, structured JD extraction, mandatory supplementary RAG, and matching. The caller supplies an already confirmed JD and must authorize cloud processing. No indexing or report writing is performed by this function.
+- Query-time source-path exclusions prevent selected core files from taking supplementary retrieval slots. Docling parsing and CrossEncoder imports were deferred until their respective operations are needed, allowing the ordinary source-selection workflow and offline tests to avoid loading those components.
+- The analyzer receives complete core text, confirmed JD, requirements, and RAG evidence. Core IDs (`core:N`) and requirement-local RAG IDs (`rag:REQUIREMENT_ID:N`) cannot collide.
+- Model citations contain an ID and exact quote. Local resolution checks source existence, RAG requirement scope, and quote membership, then attaches source type, filename/path, full supplied source text, and optional chunk index. Local absolute paths are omitted from the matching API payload while preserved in resolved results; filenames and candidate text are still transmitted. Legacy RAG numeric indices remain available; they do not represent core citations.
+- Uncited positive or `missing` judgments become `unknown`. Validation warnings flag that model-generated summaries/recommendations are not revalidated after such a downgrade. These checks verify provenance, not semantic entailment.
+- A configurable 60,000-character default cap rejects oversized matching input without truncation. It is not a token estimate; final expansion can exceed the cap after JD extraction/retrieval calls have already occurred.
+
+### Offline Verification
+
+Used the verified `jobmatch` Python executable at `E:\Anaconda\envs\jobmatch\python.exe`. That environment does not have pytest installed, so focused checks use standard-library unittest without installing dependencies.
+
+Command:
+
+```powershell
+& 'E:\Anaconda\envs\jobmatch\python.exe' -B tests/test_full_context_matching.py -v
+```
+
+Seventeen tests passed using synthetic temporary TXT/Markdown files and mocked OpenAI/Chroma interfaces. Coverage includes complete selected input, both source types, invalid/cross-requirement citations, invented/blank quotes, unknown handling, requirement coverage, budget failures, mandatory retrieval wiring, and query-filter propagation.
+
+No real candidate files or production Chroma records were read; no external API requests, indexing, dependency changes, commits, or pushes were performed. Existing user changes to AGENTS.md and the untracked audit script were preserved.
+
+Not verified: real PDF/Office/OCR information preservation, live Chroma filtering, provider schema compatibility and model judgment quality, costs, or a GUI workflow. The historical information-loss issue remains unresolved. Architecture documentation and README were updated to distinguish this implementation from these remaining goals.
+
+### Local Real-Document Parsing Smoke Check
+
+With explicit user selection, locally parsed one English resume PDF and one career-history PDF using the jobmatch environment and `tests/validate_core_documents.py`. The user deferred the specific JD, supplementary documents, and cost authorization for live RAG/matching. No certificate, identity document, or production Chroma record was read.
+
+Both selected PDFs parsed through Docling without fallback: one and two pages, respectively, with nonempty native text layers. Combined parsed text contained 7,068 characters. A heuristic native-text comparison found no missing numeric tokens. Initial word differences were recoverable after ignoring whitespace and punctuation; this does not validate reading order, table relationships, or semantic completeness. The English resume's parsed representation was substantially longer than its native text and remains a manual-review item, not a confirmed duplication defect.
+
+The diagnostic sets offline model-cache flags and blocks Python socket connection/DNS calls during parsing; zero blocked attempts were observed. Private native text, parsed Markdown, parser logs, and reports were written only under the already ignored, untracked `data/test_outputs/core_validation/` directory. Terminal output contained aggregate statistics only. No paid calls, indexing, production writes, or parser changes occurred. Real retrieval and matching remain unverified.
+
+### English Resume Expansion Root Cause
+
+At the user's request, compared the cached native/parsed representations and locally re-converted only the authorized English resume PDF with Python network calls blocked and offline-cache flags enabled. Re-conversion reproduced the cached Markdown exactly; no blocked connection attempts were observed.
+
+The 2,148-character increase (2,297 native versus 4,445 parsed) consists of 360 repeated content characters and a net 1,788 formatting characters. Three cells in the second table span two columns. Inspection confirmed each pair of grid positions refers to the same cell object with `col_span=2`; the installed Markdown serializer iterates all grid positions and emits that text twice. Each affected passage occurs once in native text. This explains the earlier 302-word-character difference exactly.
+
+An in-memory diagnostic removed only the extra copies, preserving the stored original outputs. Its normalized word-character count and character multiset then matched native text; this is not a proof of correct reading order or semantic completeness. Reports and conversion logs remain in the ignored private validation directory. No candidate source files, parser/exporter implementation, Chroma data, packages, or Git history were changed. A targeted span-aware export correction may be evaluated next; general duplicate-text removal is not justified by this finding.
+
+### Span-Aware Complete-Document Markdown Export
+
+Implemented `document/markdown.py` and connected it to `extract_docling()`. Export-only copies reduce each cell's grid coverage to its origin while preserving its text, metadata, and table dimensions; source documents retain their original spans. Compact Markdown tables avoid unnecessary alignment padding. Separate cells containing identical text are preserved. No parser model changes, generic string deduplication, production indexing, or direct HybridChunker changes were made.
+
+Verification in the jobmatch environment:
+
+- `python -B tests/test_markdown_export.py -v`: six synthetic checks passed for column/row/combined spans, source immutability, legitimate repeated values, numeric precision, escaping, and documents without tables.
+- `python -B tests/test_full_context_matching.py`: seventeen offline matching checks passed.
+- `python -B tests/validate_core_documents.py --core <authorized English resume PDF>`: network-blocked local rerun succeeded, producing 2,372 characters rather than 4,445. Each of the three previously duplicated passages now occurs once. Normalized word-character counts and multisets match native text; no missing numeric tokens were detected. No blocked network attempts were observed.
+- The first auxiliary comparison incorrectly counted a Markdown separator as an extra repeated row; excluding rows without word characters corrected the count to three, and assertions then passed. This was a diagnostic-script correction, not a failed exporter test.
+
+Private output was written to a new ignored validation run directory; prior reports and original candidate files were preserved. Semantic reading order, other real file formats, live LLM behavior, and production RAG representations remain unverified. No external API, Chroma access, dependency change, commit, or push occurred.
+
+### Isolated Real-Scenario Preparation and Authorized Attempt
+
+The user chose scope C: prepare and execute one real scenario, then report and stop. They selected the existing Sony JD and limited supplementary sources to the English score PDF and Japanese N1 image, alongside the previously selected English resume and career-history PDFs. Student identity and academic-transcript files were excluded. After offline preparation, the user explicitly authorized transmitting selected text, including possible personal identity/contact fields, to the official OpenAI endpoint, with at most nine requests, a conservative USD 0.10 guard, and no automatic retries.
+
+Implemented optional storage/collection and source-allowlist parameters through retrieval and the workflow. Explicit empty allowlists fail closed; retrieval no longer creates a missing collection. Added `tests/validate_real_matching.py` with separate offline preparation/live execution, source/input fingerprints, private output, official endpoint selection, bounded outputs, call/cost checks, and single-run protection. Existing production storage was not opened.
+
+Offline preparation:
+
+- The two core PDFs produced 4,717 parsed characters. Normalized word-character multisets matched native text for both, with no detected number omissions. Semantic/current-status correctness remains unproven.
+- The English certificate produced six chunks and N1 five. The historical score values remained detectable in native PDF text but were not all retained in complete Docling text or chunks; no facts were inserted to conceal this issue.
+- The six pilot groups were master's degree, Python/frameworks, English, Japanese, publication record, and distributed/cloud training. A mocked preflight fit the input cap and yielded an approximately USD 0.03 conservative estimate at the checked official prices.
+- Twenty-eight offline checks passed: seventeen matching, six export, three source-scope, and two runner tests. One new runner test first failed because it expected one persistent-client construction instead of seven; the assertion was corrected to verify that every construction used the isolated path. The mock still did not reproduce persistent settings conflicts.
+
+Actual attempt:
+
+1. Official OpenAI embedding request for eleven certificate chunks succeeded; 1,866 input tokens were reported. Vectors were stored only in the new isolated database.
+2. Structured JD extraction with gpt-4.1-mini succeeded; 1,404 input and 541 output tokens were reported. Six pilot requirements were selected from sixteen extracted requirements.
+3. Retrieval stopped before its query-embedding call: Chroma rejected a second client for the same isolated path with different settings. The runner specified `anonymized_telemetry=False`, while retrieval used defaults (`True`). Installed source inspection confirmed settings equality is required for a shared persistent path.
+
+The process exited with failure after two paid requests and was not retried. Estimated usage cost was USD 0.00146452, excluding any billing adjustments; actual invoice totals were not inspected. No core text reached matching, no retrieved-evidence or matching-result report was produced, and no production Chroma data was accessed. Raw files were not uploaded. Successful artifacts, usage, and error details remain in the ignored run directory.
+
+The user-authorized failure stopping point is now in effect. No post-failure implementation repair or paid retry was performed. Recommended follow-up: align persistent-client settings, add a real persistent-storage regression, then obtain approval for a continuation that reuses the successful embeddings and JD extraction. The independent English-score extraction problem remains documented for a separate fix.
+
+### Persistent-Client Fix and Explicit Continuation
+
+The user subsequently selected scope C to fix the conflict, prepare recovery, and execute the remaining real validation within the previously authorized four-source scope and cumulative limits.
+
+Added `rag/storage.py::create_chroma_client(path)` with fresh, consistent telemetry-disabled settings, shared by indexing, retrieval, and the scenario runner. Retrieval now closes the clients it opens. Real temporary persistent-storage tests cover overlapping clients, filtered queries, and reopening. A revised runner test initially failed because its old Chroma mock returned the same client for every open and that instance was closed after the first query; the mock was replaced with real temporary persistent clients. Thirty offline checks then passed across matching (17), export (6), retrieval (4), and runner (3).
+
+Added `inspect-resume` and `resume` to the scenario runner. Offline inspection verified unchanged source/input hashes, eleven cached certificate records matching the reviewed chunks, and six selected requirements consistent with the successful JD response. Continuation writes to a new subdirectory, preserves the failed attempt and its marker, includes prior reservations in the budget, and refuses duplicate paid execution. The synthetic continuation test verifies seven new requests rather than repeating all nine.
+
+One authorized live continuation completed:
+
+- Reused the eleven vectors and selected JD; no document re-embedding or new JD extraction.
+- Six query-embedding calls and one matching call succeeded. Total requests across both attempts: nine. No automatic retries.
+- Model assessments: master's degree partial; Python/frameworks, English, and Japanese matched; publication record and distributed/cloud training unknown.
+- Six citations used core text; the Japanese assessment used one N1 RAG citation. All cited paths and literal quotes passed validation, with no analyzer warnings.
+- English score extraction remains incomplete. English matched on core evidence, not a recovered score. For Python/frameworks, full cited sources contain Python, but the selected quote excerpts only explicitly display framework evidence; quote coverage is a documented review item, not an automatic code change.
+- Estimated new usage cost: USD 0.00379268; cumulative including the first attempt: USD 0.00525720. Provider invoices were not accessed.
+
+Private matching JSON, evidence, usage, and a readable local review remain in the ignored continuation directory. Authorized core/retrieved text was transmitted to the official API; no original-file upload, production Chroma access, dependency modification, commit, or push occurred. This proves the bounded six-requirement flow can execute, not semantic correctness of every assessment or full MVP completion. Work stopped at the requested report milestone without further paid calls or parser changes.
+
+### Offline Score Preservation and Citation Excerpt Coverage (Scope B)
+
+The user selected local repair and offline verification of the score-text loss and incomplete citation excerpts, with no paid API calls or production indexing.
+
+Root cause: the selected English report's total and section values were already present in Docling text items nested under picture nodes. Default Markdown export and HybridChunker traversal skipped those descendants. Enabling picture traversal restored the full set. The repair therefore uses existing Docling serializer options, without hard-coded score insertion, mandatory fact extraction, or a new fallback parser.
+
+Changes:
+
+- Complete Markdown export now enables `traverse_pictures=True` while preserving the merged-cell rendering correction.
+- `PictureTextSerializerProvider` enables traversal in the existing chunking serializer, retaining HybridChunker and source filename/index metadata.
+- Matching instructions now permit multiple exact quotes from one source and require excerpt coverage of essential AND conditions, with one applicable OR alternative.
+- A narrow Python/framework lexical advisory check flags the demonstrated excerpt omission. It neither determines qualification fulfillment nor automatically changes statuses. Other compound requirements remain a semantic-review responsibility.
+
+Verification:
+
+- Forty focused offline tests passed: prior thirty plus four synthetic picture-text and six citation-coverage tests. The cases verify label/value co-preservation, the actual chunking entry point, source immutability, same-source multi-quote support, missing excerpt warnings, OR handling, and partial-status preservation.
+- Local inspection of the real certificate found recognized values under picture parents. Full extraction and actual HybridChunker now retain the total and four section label/value combinations, each discoverable within an individual chunk; eight hybrid chunks were generated. No embeddings were computed or stored.
+- The first inspection command failed because the PowerShell-to-stdin encoding did not preserve the filename; ASCII Unicode escapes corrected file selection. The initial field-check script also incorrectly required exact labels without colons and treated a total-score scale endpoint as the score. Corrected local checks passed against unchanged repaired outputs; these were diagnostic corrections, not parser-test failures.
+- Rechecking the cached real matching result through the new advisory helper flagged only the previously observed Python excerpt omission. No real LLM call or retrospective status change occurred.
+- A network-blocked rerun of both previously selected core PDFs retained the earlier 2,372/2,345-character exports with no detected native-number omissions or remaining format-normalized word differences. This checks the picture-traversal change against those two documents, not all formats.
+
+Private structure dumps, parsed text, chunks, and local checks stayed under the existing ignored `data/test_outputs/score_repair/` location. Python network calls were blocked for real-document processing, with no attempts observed. Original documents, production Chroma, and earlier scenario artifacts were preserved. No dependency change, commit, or push occurred. Revised prompt behavior on a live model, retrieval with newly embedded chunks, general semantic entailment, and refresh of unchanged-file indexes remain outside this completed offline scope.
+
+### Consolidated Targeted Live Validation
+
+The user selected scope B for a real English/Python check and asked to minimize small tests. Reused the confirmed two core texts and JD plus the newly repaired eight English-certificate chunks. Did not reparse documents, extract JD again, add unit tests, or use N1/other source content in the live request. A one-off driver and new isolated database were placed under already ignored local outputs. Existing source hashes and input fingerprints were checked first. Execution used the previously authorized official API/data flow, with four requests maximum, a USD 0.05 conservative guard, and no retries.
+
+All four requests succeeded: one document embedding batch, two query embeddings, one matching request. Estimated usage cost was USD 0.00306172, not an inspected invoice. English retrieval contained the total and four section label/value pairs. The model supplied two valid core excerpts collectively covering Python and a requested framework. Two other citations were not verbatim: a core excerpt differed in punctuation/case, while a certificate excerpt also failed more permissive normalization. The analyzer rejected the run at its first invalid quote, so no accepted matching result was produced; raw model statuses remain unvalidated.
+
+An initial local total-score regex was overly specific to a scale order; a valid total-score sentence in retrieved evidence was then verified locally. No retrieval changes, paid retries, app-code repairs, production writes, dependency changes, commits, or pushes followed. A private review preserves the rejected response and exact-check outcomes. Product progress should next address reliable source-position quotations and reviewable report behavior as one coherent milestone, rather than repeatedly tuning prompts through small paid runs. These are recommendations, not changes authorized or implemented in this scope.
+
+### Position References, Local Failure Handling, and Readable Reports
+
+Implemented the user-approved combined milestone without paid testing:
+
+- Model citations now use source IDs and inclusive one-based line ranges. Complete source text is supplied as numbered lines and kept untouched locally; quotes are extracted by the application. No normalization, model retyping, mandatory fact stage, or citation database is needed.
+- Source/range errors produce per-requirement issues and a review-required unknown judgment instead of aborting unrelated requirements. Valid excerpts remain available for inspection. Original model status/reason is retained separately, never treated as independently verified. Narrow excerpt-coverage warnings remain advisory.
+- Review flags suppress unsafe model aggregates: strengths/gaps are cleared and summary/recommendation are replaced with cautious local text.
+- Added `matching/report.py` with readable Markdown, effective versus unconfirmed status, issues, source/line references, exact fenced quotes, UTF-8 writing without newline conversion, and overwrite refusal. The API workflow optionally accepts `report_path`; the offline CLI reads existing result JSON without API/Chroma access.
+
+Adapted existing response fixtures to line references rather than adding a broad suite. Twenty-eight relevant offline tests passed: context/workflow 17, coverage 6, runner 3, integrated report 2. The first report integration test failed because Windows newline translation altered retained CRLF; explicitly disabling translation fixed the writer and the test passed. Unrelated parser/storage checks were not repeated.
+
+Replayed the prior rejected response locally using cached inputs only. Exact legacy quotes were mapped to their source ranges; the two unresolvable quotes were deliberately retained as invalid references, not silently corrected. The review result kept two valid excerpts and marked both affected requirements unknown/review-required, with unsafe aggregate claims suppressed. The actual report CLI produced a private Markdown report under ignored `data/test_outputs/citation_replay/`. This is a cache adaptation, not a new model run or a claim of validated model line selection.
+
+No external API, source-document reread, production Chroma operation, dependency change, commit, push, or additional paid retry occurred. Original failed artifacts were preserved. Next live validation, if authorized, should check model adherence to the new line-reference schema and semantic usefulness of chosen ranges; the implemented report path is not a GUI.
+
+### Desktop MVP Integration and Offline Verification
+
+The user selected scope A: implement a runnable desktop main flow and stop after offline verification. They explicitly approved installing PySide6 only in `E:\Anaconda\envs\jobmatch`; PySide6/Qt 6.12.0 and its wheel dependencies installed successfully. The base environment was not changed.
+
+Implemented:
+
+- `ui/app.py`: native PySide6 document-role selection, editable JD and confirmation, URL extraction with manual fallback, explicit OpenAI transmission/cost consent, background tasks, requirement-level results, exact source-line display, review warnings, and non-overwriting Markdown export. Startup lists filenames only. Source/model/JD changes invalidate the relevant consent/confirmation and stale results.
+- `ui/service.py`: explicit input validation and orchestration over existing parsing, indexing, JD extraction, mandatory RAG, matching, and report components. At least one core and one supplementary source are required. One official-endpoint client is shared through optional client parameters, with automatic retries disabled, a 60-second request timeout, environment proxies bypassed, and structured chat storage disabled.
+- Separate reusable supplementary caches under ignored `data/cache/desktop_evidence/`, keyed by selected paths, content hashes, and a parser revision marker. Unchanged documents reuse embeddings. Each analysis writes new local JSON/Markdown under ignored `data/test_outputs/desktop_runs/`. No production collection is used by this desktop path.
+- Replaced the hard-coded private-document demo with a lazy GUI entry point; added `python -m jobmatch`, optional GUI dependencies, and a GUI launcher declaration. Supported suffixes moved to the lightweight document models module to avoid loading parsing libraries merely to list files.
+- Updated README startup instructions and architecture notes. Python module launch is available; no packaged Windows executable or five-version recovery is claimed.
+
+Verification in the jobmatch environment:
+
+- Two integrated offscreen GUI tests passed in 8.849 seconds. Synthetic TXT documents exercise actual parsing/chunking, persistent temporary Chroma, mocked structured responses/embeddings, background responsiveness, source-line display, invalid-citation fallback to `unknown`, safe aggregate suppression, repeated-run embedding reuse, sanitized error recovery, and URL fallback/confirmation reset. Python socket connections were blocked, with offline model flags enabled for the integrated analysis. Only synthetic screenshots were retained under ignored local output and visually inspected.
+- Twenty-six affected backend regression checks passed: context/workflow 17, runner 3, retrieval/storage 4, report 2. Runner request/cost summaries came from mocks and do not represent external calls or spending. Unrestricted test discovery and historical private-data/API scripts were not run.
+- The initial offscreen run displayed missing-font boxes; registering available Windows fonts for offscreen mode fixed Chinese/English rendering. The initial test also stalled and a diagnostic rerun timed out while a worker imported OpenAI. Stack inspection showed the test's Qt wait loop was starving Python worker execution. Replacing that test wait with a brief GIL-releasing sleep fixed the issue; the corrected integrated run passed. One read-only process query required an approved sandbox escalation, and the verified hung test process was stopped without touching application/user data.
+- A combined documentation patch initially failed its exact-line context check without changing files; corrected smaller patches updated the intended sections.
+
+This milestone made no paid API calls and did not read real candidate document contents or access production Chroma. Dependency installation downloaded public packages. Real GUI matching quality, live model line selection, all-format parsing performance, cancellation, a hard cost cap, version recovery, and standalone distribution remain unverified or planned. Cache contents and reports can contain personal data in normal use; ignore rules are not encryption or transmission controls.
+
+The user subsequently requested today's log/README update and GitHub upload. Publication is limited to reviewed source, tests, configuration, and documentation; local documents, generated reports, vectors, credentials, and cached artifacts are excluded. The upload outcome is recorded separately after execution rather than assumed here.
