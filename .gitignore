@@ -62,3 +62,9 @@ data/cache/
 
 # Hugging Face local cache
 .cache/huggingface/
+
+# private candidate profiles
+data/profile/
+
+# local indexing test documents
+data/test_index_documents/

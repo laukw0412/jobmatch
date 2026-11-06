@@ -1929,3 +1929,44 @@ The immediate next development priority is Document Preprocessing, not additiona
 
 
 ----------------------------------------------------------------
+
+
+## 2026-11-05
+
+### Architecture Reconsideration: Full-Context + RAG Augmentation
+
+Reconsidered the proposed November 3 fact-extraction-first architecture in light of the original product goals and the history of failed multi-stage Profile extraction experiments. This was an architectural discussion, not an implementation or testing session.
+
+**Previous proposal (November 3):**
+
+`Documents -> Preprocessing -> Structured Facts -> Fact Index -> RAG -> LLM Matching`
+
+The concern was that making an extracted Fact Store the mandatory information gateway could discard important source details, reproduce earlier multi-stage extraction errors, and delay a usable MVP. Retrieval-score tuning also cannot recover facts missing upstream.
+
+**Accepted target direction:** Full-Context + RAG Augmentation, rather than RAG-only or fact-only indexing.
+
+- Supply selected, complete, relevant core candidate materials to the matching LLM when feasible and within context constraints.
+- Retain ChromaDB-based RAG as a mandatory complementary evidence-retrieval step with source traceability.
+- Combine the confirmed original JD, structured JD requirements, selected core candidate context, and retrieved supplementary evidence in matching.
+- Do not require a generated Candidate Profile or structured Fact Store to access original document information.
+- Apply targeted preprocessing/fact extraction only where directly justified by observed failures (e.g. TOEFL information lost from indexed chunks).
+- Avoid the previously abandoned mandatory `Evidence -> Merge -> Profile` process without separate justification and user approval.
+- Preserve `matched`, `partial`, `missing`, and `unknown`, and distinguish unsupported evidence from a confirmed unmet qualification.
+- Avoid counting several multilingual resume versions as independent qualifications.
+
+**Status:** The Full-Context + RAG architecture is a target design. No new source-code implementation, integration test, index migration, or GUI completion has been verified during this discussion. The November 3 fact-extraction-first plan remains historical rather than a required next step.
+
+### Agent Governance Discussion
+
+Discussed separate project requirements (`GOALS.md`), repository development instructions (`AGENTS.md`), and personal global Codex instructions. The desired workflow includes: low-frequency architecture reviews with fresh context; repeated-failure analysis; proposals before rule changes; and explicit user approval before modifying rules or broad architecture. These governance decisions do not establish an automated review service by themselves.
+
+### Privacy and Data Handling Considerations
+
+Personal documents and derived diagnostic data should remain excluded from Git tracking. However, Git ignores do not prevent model API calls, IDE-agent context transmission, or command outputs from reaching remote services. Review permission settings, outbound transmissions, and Git staged files separately. Do not assume the local repository has been audited solely because documentation contains these safeguards.
+
+### Next Steps
+
+1. Inspect current source interfaces and plan the smallest working Full-Context + RAG prototype.
+2. Test source-context completeness and requirement-level matching semantics using authorized data handling.
+3. Validate the target design before changing production Chroma data or performing a broad refactor.
+4. Continue to the user-facing JD confirmation, matching report, and Windows GUI.

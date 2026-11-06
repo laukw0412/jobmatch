@@ -35,7 +35,7 @@ However, the complete application is not yet considered a reliable end-to-end MV
 
 Retrieval experiments conducted on November 3, 2026, identified limitations in document information preservation, fact-level duplication, retrieval relevance, and evidence reliability.
 
-The current development priority is introducing a lightweight document preprocessing and fact extraction stage before proceeding with the final matching workflow and graphical interface.
+Following a subsequent architecture reconsideration on November 5, 2026, the **accepted target direction** is **Full-Context + RAG Augmentation**. Selected complete core candidate materials should be available to the matching LLM when feasible, while RAG remains mandatory for supplementary, traceable evidence retrieval. Structured fact extraction is an optional technique to address demonstrated extraction failures, **not a mandatory gateway** to candidate information. This target has **not yet been implemented or validated end-to-end**.
 
 ## Implemented Features
 
@@ -274,37 +274,51 @@ Matching analysis must distinguish between:
 
 Repeated descriptions of the same experience should not be treated as independent evidence of multiple experiences.
 
-## Planned Architecture Revision
+## Architecture Reconsideration (November 5, 2026)
 
-The next development stage will introduce document preprocessing before retrieval.
+After the November 3 diagnostic experiments, a fact-only indexing direction was proposed. A later design review reconsidered whether enforcing structured fact extraction as the sole route into the knowledge base would repeat earlier multi-stage Profile pipeline problems, including information loss and unnecessary transformations.
 
-**Document Processing**
+**Accepted target direction: Full-Context + RAG Augmentation**
 
-Documents → Format Identification → Content Extraction → LLM Structured Fact Extraction → Source Validation → Cached Fact Records
+- Retain original candidate documents and traceable source references.
+- When feasible within the model context budget, select complete, relevant core candidate materials for the main matching analysis instead of requiring everything to pass through a fact store.
+- Keep RAG as a meaningful, mandatory supplementary retrieval path for requirement-specific evidence.
+- Combine the original JD, structured requirements, selected core candidate context, and retrieved supporting evidence in matching analysis.
+- Use lightweight document-specific preprocessing only where necessary to preserve important information (such as the missing TOEFL scores).
+- Do not require an LLM-generated Candidate Profile or Fact Store as a prerequisite to access original source information.
+- Preserve `matched`, `partial`, `missing`, and `unknown`, with explicit distinctions between absent evidence and evidence of unmet requirements.
+- Avoid double-counting repeated descriptions of the same qualification across resume versions.
 
-**Knowledge Base**
+**Illustrative target flow (not yet implemented):**
 
-Validated Fact Records → Embeddings → ChromaDB
+```text
+Candidate Documents ──> Source Parsing / Quality Checks ──> Selected Complete Core Context ─┐
+                    └─> Chunking / Embeddings / ChromaDB ──> Requirement-based RAG Evidence ─┤
+JD Text / URL ──> User Confirmation ──> Structured JD Requirements ───────────────────────────┤
+                                                                                                v
+                                                                                  Evidence-aware LLM Matching
+                                                                                                |
+                                                                                                v
+                                                                                   Results and Recommendations
+```
 
-**Job Matching**
+The earlier November 3 fact-extraction-first proposal is retained in the development log as a historical design proposal, **not the current approved implementation mandate**. The exact selection and retrieval policy, context limits, performance, and privacy safeguards require implementation and testing.
 
-Job Description → Structured Requirements → RAG Retrieval → Evidence-Aware LLM Matching → Recommendations
+### Immediate Development Direction
 
-The planned approach will combine deterministic document processing with LLM-based semantic extraction.
+1. Inspect current code and confirm the actual interfaces before implementing a revised pipeline.
+2. Prototype the Full-Context + RAG matching inputs with existing source material and retrieval interfaces.
+3. Verify that the most important source facts survive parsing and reach the LLM context; test the TOEFL failure case.
+4. Reassess evidence selection, duplicate qualifications, and unknown-versus-missing decisions.
+5. Continue to a usable end-to-end MVP and standalone GUI before adding extensive infrastructure.
+6. Defer optional local LLM provider work until the primary matching flow is functional.
 
-### Design Principles
+## Development Principles
 
-- Preserve original documents and their source references.
-- Improve extraction of important facts from complex layouts.
-- Represent qualifications as structured, retrievable information.
-- Support multilingual documents and multiple resume versions.
-- Identify repeated underlying facts without discarding useful source information.
-- Cache document preprocessing results using file hashes.
-- Avoid unnecessary multi-stage LLM pipelines.
-- Keep the application architecture simple and practical.
-- Prioritize factual reliability over similarity scores alone.
-
-**Note:** Document preprocessing, structured fact indexing, and the revised matching pipeline are planned features and have not yet been implemented.
+- Product-level requirements belong in `GOALS.md`; the accepted engineering direction and operating constraints are described in `AGENTS.md`.
+- Treat the existing architecture as revisable during independent reviews, not as an immutable requirement.
+- Keep real candidate documents and generated sensitive artifacts outside Git and explicitly review cloud-model transmissions.
+- Separate implemented/verified features from approved but unimplemented designs.
 
 ## Technology Stack
 
@@ -350,14 +364,12 @@ Local experimental results are stored separately from source code.
 
 ## Next Development Priorities
 
-1. Implement lightweight document preprocessing.
-2. Introduce LLM-based structured fact extraction.
-3. Improve preservation of important information from complex PDF documents.
-4. Add source verification and document-hash-based preprocessing caching.
-5. Update indexing to support structured fact retrieval.
-6. Revise evidence selection and LLM matching.
-7. Develop the standalone graphical user interface.
-8. Add an optional local LLM provider after the primary workflow is functional.
+1. Prototype selected complete core candidate context plus supplementary RAG evidence for requirement-level matching.
+2. Identify and fix concrete source-information loss (including TOEFL scores) without adding mandatory intermediate LLM stages.
+3. Validate retrieved evidence relevance, multilingual duplication, and `unknown` / `missing` semantics.
+4. Integrate matching output and JD confirmation into the standalone Windows GUI.
+5. Implement document updates and version recovery as required by the MVP.
+6. Integrate a replaceable local LLM provider later.
 
 ## Development Documentation
 
@@ -367,8 +379,8 @@ Detailed development history, experiments, and architecture decisions are docume
 
 ## Privacy
 
-Personal documents, local vector databases, extracted candidate information, and diagnostic outputs are excluded from version control.
+Personal documents, local vector databases, extracted candidate information, and diagnostic outputs must be excluded from version control. The repository `.gitignore` and tracked-file status must be verified before any commit; this README does not verify the local Git state.
 
-When OpenAI API processing is enabled, selected document content or extracted information may be transmitted to the API.
+When OpenAI API processing is enabled, selected document text, embeddings input, or extracted information may be transmitted to the API. `.gitignore` does not prevent API transmission or Codex model context transfer.
 
 API credentials and private candidate data must not be committed to public repositories.
